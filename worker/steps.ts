@@ -3,7 +3,7 @@ import { one, q } from "../lib/db";
 import { IMAGE_TIERS, VIDEO_MODELS } from "../lib/config";
 import { abs, downloadTo } from "../lib/storage";
 import { enqueue } from "../lib/jobs";
-import { analyzeVideo } from "../lib/ai/gemini";
+import { analyzeReference } from "../lib/ai/gemini";
 import { writeStory } from "../lib/ai/claude";
 import { falError, firstImageUrl, run, submit, uploadLocal, videoUrl, waitFor } from "../lib/ai/fal";
 import { renderReel } from "../lib/ffmpeg";
@@ -22,8 +22,11 @@ export async function analyzeStep(referenceId: string) {
   try {
     const ext = path.extname(ref.video_path).toLowerCase();
     const mime = ext === ".mov" ? "video/quicktime" : ext === ".webm" ? "video/webm" : "video/mp4";
-    const analysis = await analyzeVideo(abs(ref.video_path), ref.notes, mime);
-    await q(`UPDATE story_references SET status='ready', analysis=$2, updated_at=now() WHERE id=$1`, [referenceId, JSON.stringify(analysis)]);
+    const { analysis, cost } = await analyzeReference(ref.video_path, abs(ref.video_path), ref.notes, mime);
+    await q(
+      `UPDATE story_references SET status='ready', analysis=$2, cost_usd=cost_usd+$3, updated_at=now() WHERE id=$1`,
+      [referenceId, JSON.stringify(analysis), cost],
+    );
   } catch (e: any) {
     await q(`UPDATE story_references SET status='failed', error=$2, updated_at=now() WHERE id=$1`, [referenceId, e.message]);
     throw e;
@@ -50,7 +53,7 @@ export async function writeStep(projectId: string, payload: { feedback?: string 
     `SELECT story->>'logline' AS logline FROM projects WHERE reference_id=$1 AND id<>$2 AND story IS NOT NULL`,
     [p.reference_id, projectId],
   );
-  const story = await writeStory({
+  const { story, cost } = await writeStory({
     analysis: ref.analysis as Analysis,
     notes: ref.notes,
     settings: p.settings,
@@ -58,6 +61,7 @@ export async function writeStep(projectId: string, payload: { feedback?: string 
     feedback: payload.feedback,
     previous: payload.feedback ? p.story : null,
   });
+  if (cost) await addCost(projectId, cost);
   await setProject(projectId, { story, title: story.title, status: "story_review" });
   if (p.settings.autoRun) await enqueue("characters", { projectId });
 }

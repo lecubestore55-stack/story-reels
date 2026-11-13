@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { config, type ProjectSettings } from "../config";
 import { StorySchema, type Analysis, type Story } from "../types";
 import { isMock, mockStory } from "../mock";
+import { routerJson } from "./router";
 
 const STORY_TOOL = {
   name: "save_story",
@@ -88,10 +89,8 @@ export async function writeStory(args: {
   avoid: string[];        // loglines of earlier stories made from the same reference
   feedback?: string;      // user's notes for a rewrite
   previous?: Story | null;
-}): Promise<Story> {
-  if (isMock()) return mockStory(args.settings);
-  if (!config.anthropicKey) throw new Error("ANTHROPIC_API_KEY is not set");
-  const client = new Anthropic({ apiKey: config.anthropicKey });
+}): Promise<{ story: Story; cost: number }> {
+  if (isMock()) return { story: mockStory(args.settings), cost: 0 };
   const { analysis, settings } = args;
 
   const parts = [
@@ -103,9 +102,25 @@ export async function writeStory(args: {
     args.previous && args.feedback
       ? `Your previous draft:\n${JSON.stringify(args.previous, null, 2)}\n\nRewrite it following this feedback from the page owner:\n${args.feedback}`
       : "",
-    "Call save_story with the result.",
   ].filter(Boolean);
 
+  // No Anthropic key: use Claude through fal.ai (same FAL_KEY as images and video).
+  if (!config.anthropicKey) {
+    if (!config.falKey) throw new Error("Set FAL_KEY (or ANTHROPIC_API_KEY) to write stories");
+    const { data, cost } = await routerJson({
+      kind: "text",
+      system: SYSTEM,
+      prompt:
+        parts.join("\n\n") +
+        `\n\nAnswer with ONLY a JSON object (no markdown, no comments) that matches this JSON Schema:\n` +
+        JSON.stringify(STORY_TOOL.input_schema),
+      parse: (d) => StorySchema.parse(d),
+    });
+    return { story: normalize(data), cost };
+  }
+
+  const client = new Anthropic({ apiKey: config.anthropicKey });
+  parts.push("Call save_story with the result.");
   const msg = await client.messages.create({
     model: config.claudeModel,
     max_tokens: 6000,
@@ -117,7 +132,10 @@ export async function writeStory(args: {
 
   const block = msg.content.find((b) => b.type === "tool_use");
   if (!block || block.type !== "tool_use") throw new Error("Claude did not return a story");
-  const story = StorySchema.parse(block.input);
+  return { story: normalize(StorySchema.parse(block.input)), cost: 0 };
+}
+
+function normalize(story: Story): Story {
   // Normalise scene indexes and character references.
   const keys = new Set(story.characters.map((c) => c.key));
   story.scenes = story.scenes

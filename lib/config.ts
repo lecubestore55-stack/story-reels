@@ -8,6 +8,11 @@ export const config = {
   anthropicKey: process.env.ANTHROPIC_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-3.8-flash",
   claudeModel: process.env.CLAUDE_MODEL || "claude-sonnet-5-5",
+  // Used when GEMINI_API_KEY / ANTHROPIC_API_KEY are empty: everything goes through fal.ai.
+  falLlmEndpoint: process.env.FAL_LLM_ENDPOINT || "openrouter/router",
+  falLlmModel: process.env.FAL_LLM_MODEL || "anthropic/claude-sonnet-5",
+  falVideoLlmEndpoint: process.env.FAL_VIDEO_LLM_ENDPOINT || "openrouter/router/video",
+  falVideoLlmModel: process.env.FAL_VIDEO_LLM_MODEL || "google/gemini-3.8-flash",
   fontFile: process.env.FONT_FILE || "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
   workerConcurrency: Number(process.env.WORKER_CONCURRENCY || 2),
 };

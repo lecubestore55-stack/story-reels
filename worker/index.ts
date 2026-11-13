@@ -67,12 +67,11 @@ async function main() {
   // Jobs that were running when the worker stopped go back in the queue.
   const reset = await q(`UPDATE jobs SET status='queued' WHERE status='running' RETURNING id`);
   if (reset.length) console.log(`Re-queued ${reset.length} interrupted job(s)`);
-  const missing = [
-    !config.falKey && "FAL_KEY",
-    !config.geminiKey && "GEMINI_API_KEY",
-    !config.anthropicKey && "ANTHROPIC_API_KEY",
-  ].filter(Boolean);
-  if (missing.length) console.warn(`Warning: missing ${missing.join(", ")} — steps that need them will fail.`);
+  if (!config.falKey) console.warn("Warning: FAL_KEY is not set — images, video (and analysis/writing without their own keys) will fail.");
+  console.log(
+    `Analysis via ${config.geminiKey ? "Gemini API" : `fal.ai (${config.falVideoLlmModel})`}, ` +
+      `writing via ${config.anthropicKey ? "Anthropic API" : `fal.ai (${config.falLlmModel})`}`,
+  );
   console.log(`Worker started with ${config.workerConcurrency} slot(s)`);
   await Promise.all(Array.from({ length: config.workerConcurrency }, (_, i) => loop(i + 1)));
   await pg.end();

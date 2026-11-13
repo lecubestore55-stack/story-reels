@@ -2,6 +2,7 @@ import { GoogleGenAI, createPartFromUri, createUserContent } from "@google/genai
 import { config } from "../config";
 import { AnalysisSchema, type Analysis } from "../types";
 import { isMock, mockAnalysis } from "../mock";
+import { routerJson } from "./router";
 
 const ANALYSIS_JSON_SCHEMA = {
   type: "object",
@@ -56,6 +57,32 @@ Fill every field:
 - audio: music, sound effects, voices.
 - on_screen_text: every caption/text overlay, verbatim (empty list if none).
 - transcript: any spoken words or narration, verbatim (empty string if none).`;
+
+/** Analyze through fal.ai (OpenRouter video endpoint) — used when there is no Gemini key. */
+async function analyzeViaFal(relPath: string, notes: string | null): Promise<{ analysis: Analysis; cost: number }> {
+  const extra = notes?.trim() ? `\n\nNotes from the uploader (caption, story text, stats):\n${notes.trim()}` : "";
+  const { data, cost } = await routerJson({
+    kind: "video",
+    system: "You analyze short videos and answer with one JSON object only.",
+    prompt:
+      PROMPT + extra +
+      `\n\nAnswer with ONLY a JSON object (no markdown) that matches this JSON Schema:\n${JSON.stringify(ANALYSIS_JSON_SCHEMA)}`,
+    parse: (d) => AnalysisSchema.parse(d),
+    videoPath: relPath,
+  });
+  return { analysis: data, cost };
+}
+
+/**
+ * Break down the reference video. Uses the Gemini API when GEMINI_API_KEY is set,
+ * otherwise Gemini through fal.ai with the same FAL_KEY as the images and videos.
+ */
+export async function analyzeReference(relPath: string, absPath: string, notes: string | null, mimeType: string) {
+  if (isMock()) return { analysis: mockAnalysis(), cost: 0 };
+  if (config.geminiKey) return { analysis: await analyzeVideo(absPath, notes, mimeType), cost: 0 };
+  if (!config.falKey) throw new Error("Set FAL_KEY (or GEMINI_API_KEY) to analyze videos");
+  return analyzeViaFal(relPath, notes);
+}
 
 export async function analyzeVideo(filePath: string, notes: string | null, mimeType = "video/mp4"): Promise<Analysis> {
   if (isMock()) return mockAnalysis();

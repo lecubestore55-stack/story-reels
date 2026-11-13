@@ -1,5 +1,7 @@
 # Story Reels Studio
 
+**One API key:** with only `FAL_KEY`, fal.ai runs everything. Video analysis (Gemini) and story writing (Claude) go through fal's OpenRouter endpoints. A Gemini or Anthropic key is optional.
+
 Turn proven viral story reels into **new, original** vertical story reels, all in one dashboard.
 
 ```
@@ -28,7 +30,7 @@ The web app and the worker run together in **one container**, plus a Railway Pos
 2. On [railway.com](https://railway.com), create a project with **Deploy from GitHub repo** and pick the repo. Railway finds the `Dockerfile` and `railway.json` by itself.
 3. In the same project, click **+ New → Database → PostgreSQL**.
 4. Click your app service:
-   - **Variables:** add the variables from `.env.example` (`ADMIN_PASSWORD`, `SESSION_SECRET`, `FAL_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `COOKIE_SECURE=true`). Also add `DATABASE_URL` with the value `${{Postgres.DATABASE_URL}}`.
+   - **Variables:** add `ADMIN_PASSWORD`, `SESSION_SECRET`, `FAL_KEY`, `COOKIE_SECURE=true` and `PORT=8080`. Also add `DATABASE_URL` with the value `${{Postgres.DATABASE_URL}}`. That's all you need: **one fal.ai key** runs everything.
    - **Volume:** right-click the service, choose **Attach volume**, and set the mount path to `/data`.
    - **Settings → Networking:** click **Generate domain**, or add your own subdomain such as `reels.yourdomain.com`.
 5. Deploy. Open the domain and log in with `ADMIN_PASSWORD`.
