@@ -24,7 +24,10 @@ async function call(endpoint: string, input: Record<string, unknown>): Promise<{
   try {
     out = await run<RouterOut>(endpoint, input);
   } catch (e) {
-    throw new Error(falError(e));
+    const msg = falError(e);
+    // Some models (e.g. newer Gemini) refuse requests with reasoning turned off: retry with it on.
+    if (/reasoning is mandatory/i.test(msg) && !input.reasoning) return call(endpoint, { ...input, reasoning: true });
+    throw new Error(msg.slice(0, 600));
   }
   if (out.error) throw new Error(out.error);
   return { text: out.output || "", cost: Number(out.usage?.cost || 0) };
@@ -47,7 +50,9 @@ export async function routerJson<T>(opts: {
     model,
     system_prompt: opts.system,
     temperature: opts.kind === "video" ? 0.4 : 0.9,
-    max_tokens: 8000,
+    // Thinking models spend tokens on reasoning first, so leave plenty of room for the JSON.
+    max_tokens: 16000,
+    reasoning: opts.kind === "video",
   };
   if (opts.videoPath) base.video_urls = [await uploadLocal(opts.videoPath)];
 

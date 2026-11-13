@@ -79,7 +79,15 @@ async function analyzeViaFal(relPath: string, notes: string | null): Promise<{ a
  */
 export async function analyzeReference(relPath: string, absPath: string, notes: string | null, mimeType: string) {
   if (isMock()) return { analysis: mockAnalysis(), cost: 0 };
-  if (config.geminiKey) return { analysis: await analyzeVideo(absPath, notes, mimeType), cost: 0 };
+  if (config.geminiKey) {
+    try {
+      return { analysis: await analyzeVideo(absPath, notes, mimeType), cost: 0 };
+    } catch (e: any) {
+      // Google busy or the key refused: fall back to Gemini through fal.ai when a FAL_KEY exists.
+      if (!config.falKey) throw e;
+      console.warn(`Gemini API failed (${String(e?.message || e).slice(0, 200)}), using fal.ai instead`);
+    }
+  }
   if (!config.falKey) throw new Error("Set FAL_KEY (or GEMINI_API_KEY) to analyze videos");
   return analyzeViaFal(relPath, notes);
 }
@@ -99,13 +107,30 @@ export async function analyzeVideo(filePath: string, notes: string | null, mimeT
 
   try {
     const extra = notes?.trim() ? `\n\nNotes from the uploader (caption, story text, stats):\n${notes.trim()}` : "";
-    const response = await ai.models.generateContent({
-      model: config.geminiModel,
-      contents: createUserContent([createPartFromUri(file.uri!, file.mimeType || mimeType), PROMPT + extra]),
-      config: { responseMimeType: "application/json", responseJsonSchema: ANALYSIS_JSON_SCHEMA, temperature: 0.4 },
-    });
-    const text = response.text || "";
-    return AnalysisSchema.parse(JSON.parse(text));
+    // Busy model (503/429)? Wait and retry, then fall back to the backup model.
+    const models = [config.geminiModel, ...config.geminiFallbackModels.filter((m) => m !== config.geminiModel)];
+    let lastErr: unknown;
+    for (const model of models) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: createUserContent([createPartFromUri(file.uri!, file.mimeType || mimeType), PROMPT + extra]),
+            config: { responseMimeType: "application/json", responseJsonSchema: ANALYSIS_JSON_SCHEMA, temperature: 0.4 },
+          });
+          return AnalysisSchema.parse(JSON.parse(response.text || ""));
+        } catch (e: any) {
+          lastErr = e;
+          const msg = String(e?.message || e);
+          const busy = /\b(503|429|500)\b|UNAVAILABLE|RESOURCE_EXHAUSTED|overloaded|high demand/i.test(msg);
+          const missing = /\b404\b|NOT_FOUND|not found|not supported/i.test(msg);
+          if (missing) break;              // this model name doesn't exist for the key: try the next one
+          if (!busy) throw e;              // real error (bad key, bad video…): stop
+          await new Promise((r) => setTimeout(r, 5000 * (attempt + 1)));
+        }
+      }
+    }
+    throw lastErr;
   } finally {
     // Don't leave competitor videos sitting in your Google project.
     if (file.name) await ai.files.delete({ name: file.name }).catch(() => {});

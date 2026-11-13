@@ -7,6 +7,9 @@ export const config = {
   geminiKey: process.env.GEMINI_API_KEY || "",
   anthropicKey: process.env.ANTHROPIC_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-3.8-flash",
+  // Tried in order when the main model is busy (503) or not available for your key.
+  geminiFallbackModels: (process.env.GEMINI_FALLBACK_MODELS || "")
+    .split(",").map((m) => m.trim()).filter(Boolean),
   claudeModel: process.env.CLAUDE_MODEL || "claude-sonnet-5-5",
   // Used when GEMINI_API_KEY / ANTHROPIC_API_KEY are empty: everything goes through fal.ai.
   falLlmEndpoint: process.env.FAL_LLM_ENDPOINT || "openrouter/router",

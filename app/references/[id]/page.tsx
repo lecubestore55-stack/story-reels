@@ -85,7 +85,8 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
         <div>
           <div className="panel">
             <h2>Why it works</h2>
-            {!a && <p className="muted"><span className="spin" /> Gemini is watching the video…</p>}
+            {!a && data.status !== "failed" && <p className="muted"><span className="spin" /> Gemini is watching the video…</p>}
+            {!a && data.status === "failed" && <p className="muted">Analysis failed. Press Re-analyze to try again.</p>}
             {a && (
               <>
                 <p>{a.summary}</p>
