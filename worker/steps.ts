@@ -86,7 +86,7 @@ export async function charactersStep(projectId: string, payload: { only?: string
     const prompt = characterPrompt(c) + (payload.note ? ` ${payload.note}` : "");
     await upsertAsset(projectId, "character", c.key, { status: "generating", error: null, prompt, fal_endpoint: tier.textToImage });
     try {
-      const out = await run(tier.textToImage, { prompt, aspect_ratio: "3:4", num_images: 1, output_format: "png" });
+      const out = await run(tier.textToImage, tier.buildInput({ prompt, aspect: "3:4" }));
       const url = firstImageUrl(out);
       const rel = `projects/${projectId}/characters/${c.key}_${stamp()}.png`;
       await downloadTo(url, rel);
@@ -103,6 +103,39 @@ export async function charactersStep(projectId: string, payload: { only?: string
   await setProject(projectId, { status: "characters_review" });
   if (p.settings.autoRun && !payload.only) await enqueue("frames", { projectId });
 }
+
+
+// ---------------------------------------------------------------- safety retries
+// Image/video models (especially with children in frame) refuse tense family scenes.
+// When that happens we retry automatically with calmer wording, another model, and finally
+// with the children left out of that one image.
+const isPolicyError = (msg: string) => /content_policy|flagged|moderat|safety|not allowed|violat/i.test(msg);
+
+const SOFTEN: [RegExp, string][] = [
+  [/\btear[- ]?(filled|streaked|stained)\s+eyes\b/gi, "sad eyes"],
+  [/\blips\s+(trembling|quivering)\b/gi, "lips pressed together"],
+  [/\b(to\s+)?silence\s+(her|him)\b/gi, "to interrupt"],
+  [/\b(at\s+)?floor[- ]level\b/gi, "at eye level"],
+  [/\b(tear[- ]?(filled|streaked|stained)|tears?|tearful(ly)?|crying|cries|cry|sobbing|sobs?|weeping)\b/gi, "sad expression"],
+  [/\b(trembling|shaking|shakes|quivering)\b/gi, "serious"],
+  [/\b(terrified|scared|afraid|fear(ful)?|frightened|panic(ked)?)\b/gi, "worried"],
+  [/\b(shout(s|ing|ed)?|scream(s|ing|ed)?|yell(s|ing|ed)?)\b/gi, "speaks firmly"],
+  [/\b(lunge(s|d)?|lunging|charge(s|d)?|grab(s|bed|bing)?|shove(s|d)?|push(es|ed)?\s+(her|him))(\s+forward)?\b/gi, "steps forward"],
+  [/\b(starv(ed|ing|e)|hungry|scraps|leftovers?|trash( can)?|garbage( can)?|bin)\b/gi, "simple plate"],
+  [/\b(abuse(d|r|s)?|abusive|cruel(ty)?|mistreat(ed|ment)?|neglect(ed)?|punish(ed|ment)?)\b/gi, "tension"],
+  [/\b(hit(s|ting)?|slap(s|ped)?|attack(s|ed)?|fight(s|ing)?|tackle(s|d)?|violent(ly)?|violence)\b/gi, "confrontation"],
+  [/\b(on the floor|floor level|on the ground)\b/gi, "in the room"],
+];
+
+export function soften(text: string): string {
+  let out = text;
+  for (const [re, rep] of SOFTEN) out = out.replace(re, rep);
+  return out + "\nCalm, family-friendly drama: everyone is safe and unharmed, no distress, no violence.";
+}
+
+const isChild = (c: StoryCharacter) =>
+  /\b(child|kid|girl|boy|daughter|son|toddler|baby|little)\b/i.test(`${c.role} ${c.visual}`) ||
+  /\b([1-9]|1[0-2])[- ]?(year|yr)s?[- ]?old\b/i.test(c.visual);
 
 // ---------------------------------------------------------------- frames
 function framePrompt(p: ProjectRow, scene: StoryScene, refs: StoryCharacter[]) {
@@ -138,24 +171,50 @@ export async function framesStep(projectId: string, payload: { only?: number; no
   for (const c of story.characters) refUrls.set(c.key, await freshUrl(byKey.get(c.key)!.path!));
 
   const errors = await pool(scenes, 3, async (scene) => {
-    const refs = story.characters.filter((c) => scene.characters.includes(c.key));
-    const prompt = framePrompt(p, scene, refs) + (payload.note ? `\nExtra direction: ${payload.note}` : "");
-    const endpoint = refs.length ? tier.edit : tier.textToImage;
+    const allRefs = story.characters.filter((c) => scene.characters.includes(c.key));
+    const note = payload.note ? `\nExtra direction: ${payload.note}` : "";
     const ref = String(scene.index);
-    await upsertAsset(projectId, "frame", ref, { status: "generating", error: null, prompt, fal_endpoint: endpoint });
-    try {
-      const input: Record<string, unknown> = { prompt, aspect_ratio: "9:16", num_images: 1, output_format: "png" };
-      if (refs.length) input.image_urls = refs.map((c) => refUrls.get(c.key));
-      const url = firstImageUrl(await run(endpoint, input));
-      const rel = `projects/${projectId}/frames/scene${scene.index}_${stamp()}.png`;
-      await downloadTo(url, rel);
-      await addCost(projectId, tier.priceUsd);
-      await upsertAsset(projectId, "frame", ref, { status: "ready", path: rel, remote_url: url });
-    } catch (e) {
-      const msg = `Scene ${scene.index + 1}: ${falError(e)}`;
-      await upsertAsset(projectId, "frame", ref, { status: "failed", error: msg });
-      throw new Error(msg);
+    const others = Object.values(IMAGE_TIERS).filter((t) => t.id !== tier.id);
+    const adults = allRefs.filter((c) => !isChild(c));
+    const noKidsScene = { ...scene, frame_prompt: scene.frame_prompt + " Only the adults are in this shot; any child is out of frame." };
+
+    // Attempts, cheapest and most faithful first: same model, calmer words, other models, then no kids in frame.
+    const attempts: { refs: StoryCharacter[]; prompt: string; tier: typeof tier }[] = [
+      { refs: allRefs, prompt: framePrompt(p, scene, allRefs) + note, tier },
+      { refs: allRefs, prompt: soften(framePrompt(p, scene, allRefs) + note), tier },
+      ...others.map((t) => ({ refs: allRefs, prompt: soften(framePrompt(p, scene, allRefs) + note), tier: t })),
+    ];
+    if (adults.length && adults.length < allRefs.length) {
+      attempts.push({ refs: adults, prompt: soften(framePrompt(p, noKidsScene, adults) + note), tier });
     }
+
+    await upsertAsset(projectId, "frame", ref, { status: "generating", error: null, prompt: attempts[0].prompt, fal_endpoint: tier.edit });
+    let lastMsg = "";
+    for (let i = 0; i < attempts.length; i++) {
+      const a = attempts[i];
+      const endpoint = a.refs.length ? a.tier.edit : a.tier.textToImage;
+      try {
+        const imageUrls = a.refs.map((c) => refUrls.get(c.key)!).filter(Boolean);
+        const url = firstImageUrl(await run(endpoint, a.tier.buildInput({ prompt: a.prompt, aspect: "9:16", imageUrls })));
+        const rel = `projects/${projectId}/frames/scene${scene.index}_${stamp()}.png`;
+        await downloadTo(url, rel);
+        await addCost(projectId, a.tier.priceUsd);
+        await upsertAsset(projectId, "frame", ref, {
+          status: "ready", path: rel, remote_url: url, prompt: a.prompt, fal_endpoint: endpoint,
+          error: i > 0 ? `Note: the first try was blocked by the safety filter; made with a calmer version (attempt ${i + 1}).` : null,
+        });
+        return;
+      } catch (e) {
+        lastMsg = falError(e);
+        if (!isPolicyError(lastMsg)) break; // a real error: don't keep retrying
+        console.warn(`Scene ${scene.index + 1} frame blocked by safety filter (attempt ${i + 1}/${attempts.length})`);
+      }
+    }
+    const msg = `Scene ${scene.index + 1}: ${isPolicyError(lastMsg)
+      ? "blocked by the image model's safety filter even after calmer retries. Edit this scene's start frame (less distress, or uncheck the child) and regenerate."
+      : lastMsg}`;
+    await upsertAsset(projectId, "frame", ref, { status: "failed", error: msg });
+    throw new Error(msg);
   });
   if (errors.length) throw new Error(errors.join("\n"));
 
@@ -210,7 +269,20 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
       await addCost(projectId, seconds * model.pricePerSecond(p.settings.audio));
     }
     try {
-      const out = await waitFor(endpoint, requestId);
+      let out: any;
+      try {
+        out = await waitFor(endpoint, requestId);
+      } catch (e) {
+        if (!isPolicyError(falError(e))) throw e;
+        // Blocked by the video model's safety filter: one retry with calmer wording.
+        console.warn(`Scene ${scene.index + 1} clip blocked by safety filter, retrying with calmer prompt`);
+        const prompt = soften(motionPrompt(scene));
+        const imageUrl = await freshUrl(frames.get(ref)!.path!);
+        requestId = await submit(endpoint, model.buildInput({ prompt, imageUrl, seconds, audio: p.settings.audio }));
+        await upsertAsset(projectId, "clip", ref, { status: "generating", prompt, fal_endpoint: endpoint, fal_request_id: requestId });
+        await addCost(projectId, seconds * model.pricePerSecond(p.settings.audio));
+        out = await waitFor(endpoint, requestId);
+      }
       const url = videoUrl(out);
       const rel = `projects/${projectId}/clips/scene${scene.index}_${stamp()}.mp4`;
       await downloadTo(url, rel);

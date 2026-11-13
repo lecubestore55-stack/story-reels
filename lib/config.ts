@@ -21,7 +21,8 @@ export const config = {
 };
 
 // ---------------------------------------------------------------- images
-export type ImageTierId = "standard" | "lite";
+export type ImageTierId = "seedream" | "standard" | "lite";
+export type Aspect = "9:16" | "3:4";
 
 export interface ImageTier {
   id: ImageTierId;
@@ -29,23 +30,48 @@ export interface ImageTier {
   textToImage: string;   // used for character photos and scenes with nobody in them
   edit: string;          // used for scenes, with the character photos as references
   priceUsd: number;      // approximate, only for the cost counter
+  /** Each model family names its size fields differently. */
+  buildInput: (a: { prompt: string; aspect: Aspect; imageUrls?: string[] }) => Record<string, unknown>;
 }
 
+const SEEDREAM_SIZE: Record<Aspect, { width: number; height: number }> = {
+  "9:16": { width: 1440, height: 2560 },
+  "3:4": { width: 1920, height: 2560 },
+};
+
+const nanoInput: ImageTier["buildInput"] = ({ prompt, aspect, imageUrls }) => ({
+  prompt, aspect_ratio: aspect, num_images: 1, output_format: "png",
+  ...(imageUrls?.length ? { image_urls: imageUrls } : {}),
+});
+
 export const IMAGE_TIERS: Record<ImageTierId, ImageTier> = {
+  seedream: {
+    id: "seedream",
+    label: "Seedream 5.0 Lite — cheapest, realistic ($0.035/image)",
+    textToImage: process.env.FAL_SEEDREAM_T2I || "fal-ai/bytedance/seedream/v5/lite/text-to-image",
+    edit: process.env.FAL_SEEDREAM_EDIT || "fal-ai/bytedance/seedream/v5/lite/edit",
+    priceUsd: Number(process.env.FAL_SEEDREAM_PRICE_USD || 0.035),
+    buildInput: ({ prompt, aspect, imageUrls }) => ({
+      prompt, image_size: SEEDREAM_SIZE[aspect], num_images: 1, output_format: "png",
+      ...(imageUrls?.length ? { image_urls: imageUrls } : {}),
+    }),
+  },
   standard: {
     id: "standard",
-    label: "Nano Banana 2 (sharper, ~$0.08/image)",
+    label: "Nano Banana 2 — sharp, stricter filter (~$0.08/image)",
     textToImage: process.env.FAL_IMAGE_MODEL || "fal-ai/nano-banana-2",
     edit: process.env.FAL_IMAGE_EDIT_MODEL || "fal-ai/nano-banana-2/edit",
     priceUsd: Number(process.env.FAL_IMAGE_PRICE_USD || 0.08),
+    buildInput: nanoInput,
   },
   lite: {
     id: "lite",
-    label: "Nano Banana Lite (cheaper, 1K images, ~$0.05/image)",
+    label: "Nano Banana Lite — 1K images (~$0.05/image)",
     // The lite edit endpoint also works with no reference images, so it covers both jobs.
     textToImage: process.env.FAL_IMAGE_LITE_MODEL || "google/nano-banana-lite/edit",
     edit: process.env.FAL_IMAGE_LITE_MODEL || "google/nano-banana-lite/edit",
     priceUsd: Number(process.env.FAL_IMAGE_LITE_PRICE_USD || 0.05),
+    buildInput: nanoInput,
   },
 };
 
@@ -172,13 +198,16 @@ export interface ProjectSettings {
   language: string;        // language of the hook text and any dialogue
   instructions: string;    // extra direction for the writer (audience, country, tone…)
   storyMode: StoryMode;    // original = new story with the same emotion; remake = same story, new look
+  drama: DramaLevel;       // safe = no physical conflict; strong = slaps/pushes between adults, kids only implied in danger
 }
+
+export type DramaLevel = "safe" | "strong";
 
 export type StoryMode = "original" | "remake";
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   videoModel: "veo3.1-lite",
-  imageTier: "standard",
+  imageTier: "seedream",
   sceneCount: 3,
   clipSeconds: 6,
   audio: true,
@@ -189,6 +218,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   language: "English",
   instructions: "",
   storyMode: "original",
+  drama: "safe",
 };
 
 export function normalizeSettings(input: Partial<ProjectSettings> | null | undefined): ProjectSettings {
@@ -208,6 +238,7 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     language: String(s.language || "English").slice(0, 40),
     instructions: String(s.instructions || "").slice(0, 2000),
     storyMode: s.storyMode === "remake" ? "remake" : "original",
+    drama: s.drama === "strong" ? "strong" : "safe",
   };
 }
 

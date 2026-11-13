@@ -11,9 +11,9 @@ Competitor reel (MP4)
 New original story   ← Claude keeps only the emotional pattern; new characters, setting, conflict, twist
    │  you review / edit / ask for a rewrite
    ▼
-Character photos     ← fal.ai Nano Banana 2 (one reference photo per character)
+Character photos     ← fal.ai Seedream 5.0 Lite (default) or Nano Banana 2 (one reference photo per character)
    ▼
-Scene start frames   ← Nano Banana 2 Edit, using the character photos so faces/outfits stay the same
+Scene start frames   ← Seedream 5.0 Lite Edit, using the character photos so faces/outfits stay the same
    ▼
 Video clips          ← fal.ai Veo 3.1 Lite (default, cheapest) or Kling / Veo 3.1, image-to-video, 9:16
    ▼
@@ -79,12 +79,12 @@ Compose runs the web and the worker as two containers with a local Postgres, lis
 | Kling 3 Pro | $0.168 with sound | $3.02 |
 | Veo 3.1 | $0.40 with sound | $7.20 (3 × 6 s) |
 
-Images: Nano Banana 2 costs about $0.08 each, Nano Banana Lite about $0.05 each (estimated). A reel needs one image per character plus one per scene, usually 6.
+Images: Seedream 5.0 Lite costs $0.035 each (default), Nano Banana 2 about $0.08, Nano Banana Lite about $0.05 (estimated). A reel needs one image per character plus one per scene, usually 6.
 
 | Setup | Total per reel |
 | --- | --- |
-| Veo 3.1 Lite + sound + Nano Banana 2 (default) | about $1.38 |
-| Veo 3.1 Lite silent + your music + Nano Banana Lite | about $0.84 |
+| Veo 3.1 Lite + sound + Seedream (default) | about $1.11 |
+| Veo 3.1 Lite silent + your music + Seedream | about $0.75 |
 | Kling 3 Pro + sound (premium) | about $3.50 |
 
 Ways to spend less:

@@ -132,6 +132,19 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
                 </p>
               )}
             </div>
+            <div className="field">
+              <label>Drama level</label>
+              <select value={s.drama} onChange={(e) => set({ drama: e.target.value as any })}>
+                <option value="safe">Safe: no physical conflict (best for monetization)</option>
+                <option value="strong">Strong drama: slaps/pushes between adults, danger to kids only implied</option>
+              </select>
+              {s.drama === "strong" && (
+                <p className="small" style={{ color: "var(--warn)", marginTop: 6 }}>
+                  Like the competitor: the threat is shown without the child (empty stroller, child out of frame), and the child
+                  appears only when safe. Physical action between adults can limit ads on some reels.
+                </p>
+              )}
+            </div>
             <div className="grid g3">
               <div className="field">
                 <label>Video model</label>

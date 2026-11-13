@@ -81,6 +81,10 @@ Production rules (AI video):
 - Each scene is ONE continuous shot that starts from a still image (frame_prompt) and animates it (motion_prompt).
 - Keep actions simple and physically plausible: walking in, kneeling, turning, pointing, faces reacting. No fast action, no crowds, no text on screen.
 - Keep the same characters, outfits and setting across scenes so they look continuous.
+- frame_prompt and motion_prompt go to image/video models with strict safety filters that block distressed children.
+  In those two fields describe children as calm, serious, sad or worried — never crying, tears, trembling, scared,
+  shouted at, on the floor eating scraps, or near anyone acting aggressively. Show conflict between adults with
+  posture and looks (arms crossed, pointing, stepping back). Put the emotional intensity in the dialogue instead.
 - Scene 0 must hook within 2 seconds.`;
 
 const SYSTEM_REMAKE = `You adapt a competitor's viral short vertical video into a REMAKE for a Facebook Reels page.
@@ -104,8 +108,28 @@ Production rules (AI video):
 - Each scene is ONE continuous shot that starts from a still image (frame_prompt) and animates it (motion_prompt).
 - Map the reference beats onto the requested number of scenes in order. Keep actions simple and physically plausible.
 - Keep the same characters, outfits and setting across scenes so they look continuous.
+- frame_prompt and motion_prompt go to image/video models with strict safety filters that block distressed children.
+  In those two fields describe children as calm, serious, sad or worried — never crying, tears, trembling, scared,
+  shouted at, on the floor eating scraps, or near anyone acting aggressively. Show conflict between adults with
+  posture and looks (arms crossed, pointing, stepping back). Put the emotional intensity in the dialogue instead.
 - In "originality": kept_from_reference = what you kept (plot, dialogue…), changed = every visual change, and
   risk_notes = an honest note that this is a remake of the same story.`;
+
+// Replaces the content rules above when the page owner picks "Strong drama".
+const STRONG_DRAMA = `
+DRAMA LEVEL: STRONG — this replaces the content rules above.
+- Physical drama between ADULTS is allowed and should be visible: a slap, a shove, grabbing an arm, someone falling
+  into a pool, a dramatic fall to the ground. Keep it short and theatrical: no blood, no wounds, no weapons, no gore.
+- Danger to a child or baby must be IMPLIED, never shown, using the competitor's shot trick:
+  * show the threat without the child in frame (an EMPTY stroller rolling into the pool, a door slamming, an
+    off-screen sound, the adults' shocked faces);
+  * show the child only when safe (held in someone's arms, standing behind the protector, sleeping calmly).
+  * A child and an aggressive adult or a dangerous object are never in the same shot.
+- The scene's "characters" list must contain ONLY who is visible in that shot. Leave the child out of every
+  scene where the danger or the physical conflict happens.
+- In frame_prompt/motion_prompt describe children as calm or safe; the shock comes from the adults and the
+  situation. Dialogue can be intense.
+- Monetization note: keep at most one physical action per reel, and never show anyone lying hurt.`;
 
 export async function writeStory(args: {
   analysis: Analysis;
@@ -118,7 +142,7 @@ export async function writeStory(args: {
   if (isMock()) return { story: mockStory(args.settings), cost: 0 };
   const { analysis, settings } = args;
   const remake = settings.storyMode === "remake";
-  const system = remake ? SYSTEM_REMAKE : SYSTEM;
+  const system = (remake ? SYSTEM_REMAKE : SYSTEM) + (settings.drama === "strong" ? STRONG_DRAMA : "");
 
   const parts = [
     remake
