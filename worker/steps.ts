@@ -241,6 +241,8 @@ export async function renderStep(projectId: string) {
     clips: story.scenes.map((s) => abs(clips.get(String(s.index))!.path!)),
     output: abs(rel),
     hookText: p.settings.hookText ? story.hook_text : null,
+    subtitles: p.settings.subtitles ? story.scenes.map((s) => s.dialogue ?? null) : undefined,
+    endText: p.settings.endCard ? story.end_text || "What happened next? Full story in the comments 👇" : null,
     music: p.music_path ? abs(p.music_path) : null,
     workDir: abs(`projects/${projectId}/tmp`),
   });

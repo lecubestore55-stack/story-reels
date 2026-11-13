@@ -204,6 +204,12 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
               </label>
             )}
           </div>
+          {reached.clips && !data.final_url && (
+            <div className="row" style={{ margin: "8px 0" }}>
+              <button className="primary" disabled={busy} onClick={() => run("render")}>Render final MP4 (free)</button>
+              <span className="muted small">Joins the clips you already paid for — no new generation.</span>
+            </div>
+          )}
           <p className="muted small">The final MP4 is rebuilt automatically when clips finish.{!s.audio && " Clips are silent — add music on the final step."}</p>
           <div className="grid g4" style={{ marginTop: 10 }}>
             {story.scenes.map((sc) => {
@@ -248,6 +254,17 @@ function FinalPanel({ data, busy, run, saveSettings, reload }: {
               onChange={async (e) => { await saveSettings({ hookText: e.target.checked }); run("render"); }} />
             Hook text on top: “{data.story?.hook_text}”
           </label>
+          <label className="check">
+            <input type="checkbox" checked={data.settings.subtitles} disabled={busy}
+              onChange={async (e) => { await saveSettings({ subtitles: e.target.checked }); run("render"); }} />
+            Subtitles (each scene&apos;s spoken line)
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={data.settings.endCard} disabled={busy}
+              onChange={async (e) => { await saveSettings({ endCard: e.target.checked }); run("render"); }} />
+            End card: “{data.story?.end_text || "What happened next? Full story in the comments 👇"}”
+          </label>
+          <p className="muted small">Changed the hook, end card or dialogue in the story? Save it, then press Re-render (free).</p>
           <div className="field" style={{ marginTop: 12 }}>
             <label>Background music (optional, use music you have the rights to)</label>
             {data.music_url && (
@@ -337,6 +354,7 @@ function StoryPanel({ data, busy, run, reload, setMsg }: {
             <div className="field"><label>Title</label><input type="text" value={draft.title} onChange={(e) => edit({ title: e.target.value })} /></div>
             <div className="field"><label>Hook text (top of the reel)</label><input type="text" value={draft.hook_text} onChange={(e) => edit({ hook_text: e.target.value })} /></div>
           </div>
+          <div className="field"><label>End card (last seconds — sends viewers to the full story)</label><input type="text" value={draft.end_text ?? ""} onChange={(e) => edit({ end_text: e.target.value })} placeholder="What happened next? Full story in the comments 👇" /></div>
           <div className="field"><label>Logline</label><textarea rows={2} value={draft.logline} onChange={(e) => edit({ logline: e.target.value })} /></div>
           <div className="field"><label>Setting (used in every image)</label><textarea rows={2} value={draft.setting} onChange={(e) => edit({ setting: e.target.value })} /></div>
 

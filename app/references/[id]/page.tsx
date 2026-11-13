@@ -118,7 +118,21 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
           <div className="panel">
             <h2>Make new original reels from this</h2>
             <p className="muted small">Claude keeps only the emotional pattern and invents new characters, setting, conflict and twist. Each reel gets its own different story.</p>
-            <div className="grid g3" style={{ marginTop: 12 }}>
+            <div className="field" style={{ marginTop: 12 }}>
+              <label>Story mode</label>
+              <select value={s.storyMode} onChange={(e) => set({ storyMode: e.target.value as any })}>
+                <option value="original">New original story: same emotion, new plot, characters and twist</option>
+                <option value="remake">Remake: same story and dialogue, new characters and new look</option>
+              </select>
+              {s.storyMode === "remake" && (
+                <p className="small" style={{ color: "var(--warn)", marginTop: 6 }}>
+                  Remake keeps the competitor&apos;s plot and dialogue and changes only the visuals. Facebook may treat close copies as
+                  unoriginal (less reach / no monetization), so consider rewording the dialogue in the story editor.
+                  Violence in the reference is replaced with non-contact action.
+                </p>
+              )}
+            </div>
+            <div className="grid g3">
               <div className="field">
                 <label>Video model</label>
                 <select value={s.videoModel} onChange={(e) => set({ videoModel: e.target.value as any })}>
@@ -152,6 +166,8 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
                   ? <label className="check"><input type="checkbox" checked={settings.audio} onChange={(e) => set({ audio: e.target.checked })} /> AI sound (ambience, short lines)</label>
                   : <p className="muted small">This model makes silent clips — add music on the final step.</p>}
                 <label className="check"><input type="checkbox" checked={settings.hookText} onChange={(e) => set({ hookText: e.target.checked })} /> Hook text on top</label>
+                <label className="check"><input type="checkbox" checked={s.subtitles} onChange={(e) => set({ subtitles: e.target.checked })} /> Subtitles (dialogue)</label>
+                <label className="check"><input type="checkbox" checked={s.endCard} onChange={(e) => set({ endCard: e.target.checked })} /> Cliffhanger card at the end → website</label>
                 <label className="check"><input type="checkbox" checked={settings.autoRun} onChange={(e) => set({ autoRun: e.target.checked })} /> Run all steps without review</label>
               </div>
             </div>
@@ -162,7 +178,7 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
             {msg && <div className="alert bad">{msg}</div>}
             <div className="row">
               <button className="primary" disabled={busy || data.status === "failed"} onClick={create}>
-                {busy ? "Creating…" : `Write ${count} new stor${count === 1 ? "y" : "ies"}`}
+                {busy ? "Creating…" : s.storyMode === "remake" ? `Make ${count} remake${count === 1 ? "" : "s"}` : `Write ${count} new stor${count === 1 ? "y" : "ies"}`}
               </button>
               <span className="muted small">
                 Writing is nearly free. Video for one reel: about {money(estimateVideoCost(s))} ({s.sceneCount} × {s.clipSeconds}s), charged only when you generate.

@@ -48,6 +48,7 @@ export const StorySchema = z.object({
   title: z.string(),
   logline: z.string(),
   hook_text: z.string(),                  // burned at the top of the reel
+  end_text: z.string().default("What happened next? Full story in the comments 👇"), // card over the last seconds
   setting: z.string(),                    // place + look, reused in every frame
   characters: z.array(CharacterSchema).min(1).max(5),
   scenes: z.array(SceneSchema).min(1).max(8),

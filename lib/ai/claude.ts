@@ -13,6 +13,7 @@ const STORY_TOOL = {
       title: { type: "string", description: "Internal title of the new story" },
       logline: { type: "string", description: "One-sentence summary" },
       hook_text: { type: "string", description: "Text burned at the top of the reel, max 70 characters, creates curiosity, in the requested language" },
+      end_text: { type: "string", description: "Card shown over the last 2-3 seconds that sends viewers to the full story, max 80 characters, in the requested language, e.g. 'What she found in that room… Full story in the comments 👇'. Must create curiosity, never reveal the answer." },
       setting: { type: "string", description: "Place, time of day, decor, lighting, color palette. Reused in every frame so it must be specific." },
       characters: {
         type: "array",
@@ -56,7 +57,7 @@ const STORY_TOOL = {
         required: ["kept_from_reference", "changed", "risk_notes"],
       },
     },
-    required: ["title", "logline", "hook_text", "setting", "characters", "scenes", "originality"],
+    required: ["title", "logline", "hook_text", "end_text", "setting", "characters", "scenes", "originality"],
   },
 };
 
@@ -82,6 +83,30 @@ Production rules (AI video):
 - Keep the same characters, outfits and setting across scenes so they look continuous.
 - Scene 0 must hook within 2 seconds.`;
 
+const SYSTEM_REMAKE = `You adapt a competitor's viral short vertical video into a REMAKE for a Facebook Reels page.
+Keep the SAME story: the same events in the same order, the same conflict and the same twist — but end the reel on a cliffhanger right before the final payoff (see Ending).
+Keep the dialogue: reuse the spoken lines from the transcript (translate them if another language is requested;
+you may shorten a line to fit the clip length).
+
+Change the LOOK completely so it is a new production, not a re-upload:
+- New characters: different names, different faces, ages within the same role, hair, skin tone and outfits.
+- A different location look: different house/room style, decor, colors, lighting and time of day.
+- Your own camera framing and angles for each shot; never copy the reference compositions.
+- New hook text in your own words (same promise, different wording).
+- No real people, brands, logos, celebrities or copyrighted characters.
+
+Content rules (Facebook monetization + ad safety) — these override the reference:
+- No violence, hitting, tackling, injuries, blood or weapons on screen. If the reference has a physical fight,
+  stage it without contact: the protector steps in between, raises a hand to stop them, or holds a wrist firmly.
+- No nudity or sexual content. Children may appear but are never harmed on screen.
+
+Production rules (AI video):
+- Each scene is ONE continuous shot that starts from a still image (frame_prompt) and animates it (motion_prompt).
+- Map the reference beats onto the requested number of scenes in order. Keep actions simple and physically plausible.
+- Keep the same characters, outfits and setting across scenes so they look continuous.
+- In "originality": kept_from_reference = what you kept (plot, dialogue…), changed = every visual change, and
+  risk_notes = an honest note that this is a remake of the same story.`;
+
 export async function writeStory(args: {
   analysis: Analysis;
   notes: string | null;
@@ -92,13 +117,19 @@ export async function writeStory(args: {
 }): Promise<{ story: Story; cost: number }> {
   if (isMock()) return { story: mockStory(args.settings), cost: 0 };
   const { analysis, settings } = args;
+  const remake = settings.storyMode === "remake";
+  const system = remake ? SYSTEM_REMAKE : SYSTEM;
 
   const parts = [
-    `Reference breakdown (competitor video, for inspiration only):\n${JSON.stringify(analysis, null, 2)}`,
+    remake
+      ? `Reference video to remake (keep its story, beats, twist and dialogue; change every visual):\n${JSON.stringify(analysis, null, 2)}`
+      : `Reference breakdown (competitor video, for inspiration only):\n${JSON.stringify(analysis, null, 2)}`,
+    remake && analysis.transcript?.trim() ? `Dialogue to keep (transcript of the reference):\n${analysis.transcript.trim()}` : "",
     args.notes?.trim() ? `Uploader notes about the reference:\n${args.notes.trim()}` : "",
     `Requirements:\n- Exactly ${settings.sceneCount} scenes of about ${settings.clipSeconds} seconds each (index 0..${settings.sceneCount - 1}).\n- Hook text and any dialogue in ${settings.language}.\n- Total length about ${settings.sceneCount * settings.clipSeconds} seconds.`,
+    `Ending (very important): the reel is a TEASER for the full story on our website. The last scene must stop at the moment of highest tension, right BEFORE the answer or the payoff (a shocked face, a door about to open, a hidden object half-seen, a line cut off). Do not resolve the story in the video. The end_text card then invites viewers to read what happened next in the comments.`,
     settings.instructions.trim() ? `Page owner's direction:\n${settings.instructions.trim()}` : "",
-    args.avoid.length ? `Stories already made from this reference — yours must be clearly different from all of them:\n- ${args.avoid.join("\n- ")}` : "",
+    args.avoid.length && !remake ? `Stories already made from this reference — yours must be clearly different from all of them:\n- ${args.avoid.join("\n- ")}` : "",
     args.previous && args.feedback
       ? `Your previous draft:\n${JSON.stringify(args.previous, null, 2)}\n\nRewrite it following this feedback from the page owner:\n${args.feedback}`
       : "",
@@ -109,7 +140,7 @@ export async function writeStory(args: {
     if (!config.falKey) throw new Error("Set FAL_KEY (or ANTHROPIC_API_KEY) to write stories");
     const { data, cost } = await routerJson({
       kind: "text",
-      system: SYSTEM,
+      system,
       prompt:
         parts.join("\n\n") +
         `\n\nAnswer with ONLY a JSON object (no markdown, no comments) that matches this JSON Schema:\n` +
@@ -124,7 +155,7 @@ export async function writeStory(args: {
   const msg = await client.messages.create({
     model: config.claudeModel,
     max_tokens: 6000,
-    system: SYSTEM,
+    system,
     tools: [STORY_TOOL],
     tool_choice: { type: "tool", name: "save_story" },
     messages: [{ role: "user", content: parts.join("\n\n") }],

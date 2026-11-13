@@ -166,10 +166,15 @@ export interface ProjectSettings {
   clipSeconds: number;     // seconds per clip
   audio: boolean;          // model-generated sound (ambience, sfx, short lines)
   hookText: boolean;       // burn the hook text at the top of the reel
+  subtitles: boolean;      // burn each scene's dialogue as subtitles
+  endCard: boolean;        // curiosity card over the last seconds, pointing to the full story
   autoRun: boolean;        // run every step without stopping for review
   language: string;        // language of the hook text and any dialogue
   instructions: string;    // extra direction for the writer (audience, country, tone…)
+  storyMode: StoryMode;    // original = new story with the same emotion; remake = same story, new look
 }
+
+export type StoryMode = "original" | "remake";
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   videoModel: "veo3.1-lite",
@@ -178,9 +183,12 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   clipSeconds: 6,
   audio: true,
   hookText: true,
+  subtitles: true,
+  endCard: true,
   autoRun: false,
   language: "English",
   instructions: "",
+  storyMode: "original",
 };
 
 export function normalizeSettings(input: Partial<ProjectSettings> | null | undefined): ProjectSettings {
@@ -194,9 +202,12 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     clipSeconds: VIDEO_MODELS[model].snapSeconds(Number(s.clipSeconds) || 6),
     audio: Boolean(s.audio) && VIDEO_MODELS[model].supportsAudio,
     hookText: Boolean(s.hookText),
+    subtitles: s.subtitles === undefined ? true : Boolean(s.subtitles),
+    endCard: s.endCard === undefined ? true : Boolean(s.endCard),
     autoRun: Boolean(s.autoRun),
     language: String(s.language || "English").slice(0, 40),
     instructions: String(s.instructions || "").slice(0, 2000),
+    storyMode: s.storyMode === "remake" ? "remake" : "original",
   };
 }
 

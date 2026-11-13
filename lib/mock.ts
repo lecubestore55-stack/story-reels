@@ -66,6 +66,7 @@ export function mockStory(s: ProjectSettings): Story {
     title: "The Coat on the Hook",
     logline: "A grandson visits his grandmother's care home early and finds her coat given to a staff member's daughter.",
     hook_text: "He visited his grandma 2 hours early… and froze at the door",
+    end_text: "What he found in her room changed everything… Full story in the comments 👇",
     setting: "Small care home common room, warm afternoon light, beige walls, wooden chairs, a coat rack by the window",
     characters: [
       { key: "grandson", name: "Daniel", role: "grandson", visual: "man, 28, short dark hair, light stubble, grey hoodie, blue jeans" },
@@ -78,7 +79,7 @@ export function mockStory(s: ProjectSettings): Story {
       characters: i === 0 ? ["grandson", "grandma"] : ["grandson", "grandma", "manager"],
       frame_prompt: `Scene ${i + 1} start frame`,
       motion_prompt: `Scene ${i + 1} motion`,
-      dialogue: null,
+      dialogue: i === 0 ? "Grandma? Why are you so cold?" : i === n - 1 ? "Daniel… don't open that door." : null,
     })),
     originality: {
       kept_from_reference: ["surprise discovery", "role reversal ending"],
