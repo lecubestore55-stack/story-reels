@@ -153,7 +153,9 @@ function framePrompt(p: ProjectRow, scene: StoryScene, refs: StoryCharacter[]) {
       refs.map((c, i) => `- Reference image ${i + 1}: ${c.name} (${c.role}) — ${c.visual}`).join("\n")
     : "";
   return (
-    `Create a photorealistic vertical 9:16 cinematic film still. It is the first frame of a video shot.\n` +
+    `Create a photorealistic vertical 9:16 cinematic film still. It is the FIRST frame of a video shot: show the ` +
+    `moment just before the action starts (the action will happen in the video). Everyone stands, sits or moves ` +
+    `naturally with their feet on the ground; no one frozen mid-air, no motion blur.\n` +
     `Setting: ${story.setting}\nShot: ${scene.frame_prompt}${people}\n` +
     `${LOOKS[p.settings.look].prompt}\nNo text, no captions, no watermark, no split screen.`
   );

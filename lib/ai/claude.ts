@@ -40,7 +40,7 @@ const STORY_TOOL = {
             index: { type: "integer", description: "0-based" },
             beat: { type: "string", description: "What happens in story terms" },
             characters: { type: "array", items: { type: "string" }, description: "keys of characters visible" },
-            frame_prompt: { type: "string", description: "The still image this clip STARTS from: who is where, poses, expressions, framing, camera angle. Vertical 9:16. No text in image." },
+            frame_prompt: { type: "string", description: "The FIRST frame of the clip = the moment just BEFORE the action (never the peak or result): who is where, poses, expressions, framing, camera angle, and continuity details from the previous scene. Vertical 9:16. No text in image." },
             motion_prompt: { type: "string", description: "What moves during the clip: actions, expressions, camera movement. Physically simple and realistic." },
             dialogue: { type: ["string", "null"], description: "Optional short spoken line (max 12 words) or null. ONE speaker only." },
             speaker: { type: ["string", "null"], description: "Key of the character who says the dialogue (must be in this scene's characters and visible), or null when there is no dialogue" },
@@ -82,6 +82,15 @@ Production rules (AI video):
 - Each scene is ONE continuous shot that starts from a still image (frame_prompt) and animates it (motion_prompt).
 - Keep actions simple and physically plausible: walking in, kneeling, turning, pointing, faces reacting. No fast action, no crowds, no text on screen.
 - Keep the same characters, outfits and setting across scenes so they look continuous.
+- frame_prompt is the FIRST FRAME of the shot = the moment just BEFORE the action. The action itself happens in
+  motion_prompt. Never put the peak or the result of the action in frame_prompt, and never freeze anyone mid-air.
+  Examples: diving → frame: Rosa running to the pool edge, arms starting to lift; motion: she dives in.
+  Slap → frame: the two women face to face, Camila's hand starting to rise; motion: the slap and the reaction.
+  Stroller falls → frame: the stroller rolling near the edge; motion: it tips over and splashes.
+- Continuity: each frame_prompt must match how the previous scene ENDED (positions, who holds the baby, wet
+  clothes after the pool, objects already in the water, time of day). Write these details explicitly.
+- Each scene shows ONE clear action that a viewer understands in 2 seconds, and the scenes follow cause → effect
+  in a logical order (no action shown twice, no jumps that skip what the viewer needs to understand).
 - Dialogue: at most ONE speaker per scene. Set "speaker" to that character's key, make sure they are in the scene's
   characters, and in frame_prompt/motion_prompt keep the speaker's face visible and the camera on them while they talk
   (the listener can be in the blurred foreground). Never give a line to one character while the shot is about another.
@@ -115,6 +124,15 @@ Production rules (AI video):
 - Each scene is ONE continuous shot that starts from a still image (frame_prompt) and animates it (motion_prompt).
 - Map the reference beats onto the requested number of scenes in order. Keep actions simple and physically plausible.
 - Keep the same characters, outfits and setting across scenes so they look continuous.
+- frame_prompt is the FIRST FRAME of the shot = the moment just BEFORE the action. The action itself happens in
+  motion_prompt. Never put the peak or the result of the action in frame_prompt, and never freeze anyone mid-air.
+  Examples: diving → frame: Rosa running to the pool edge, arms starting to lift; motion: she dives in.
+  Slap → frame: the two women face to face, Camila's hand starting to rise; motion: the slap and the reaction.
+  Stroller falls → frame: the stroller rolling near the edge; motion: it tips over and splashes.
+- Continuity: each frame_prompt must match how the previous scene ENDED (positions, who holds the baby, wet
+  clothes after the pool, objects already in the water, time of day). Write these details explicitly.
+- Each scene shows ONE clear action that a viewer understands in 2 seconds, and the scenes follow cause → effect
+  in a logical order (no action shown twice, no jumps that skip what the viewer needs to understand).
 - Dialogue: at most ONE speaker per scene. Set "speaker" to that character's key, make sure they are in the scene's
   characters, and in frame_prompt/motion_prompt keep the speaker's face visible and the camera on them while they talk
   (the listener can be in the blurred foreground). Never give a line to one character while the shot is about another.
