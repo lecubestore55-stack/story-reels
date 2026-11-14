@@ -184,7 +184,9 @@ export async function framesStep(projectId: string, payload: { only?: number; no
     const allRefs = story.characters.filter((c) => scene.characters.includes(c.key));
     const note = payload.note ? `\nExtra direction: ${payload.note}` : "";
     const ref = String(scene.index);
-    const others = Object.values(IMAGE_TIERS).filter((t) => t.id !== tier.id);
+    // When a Google model blocks a scene, the permissive FLUX/Seedream models are tried first.
+    const fallbackOrder = ["flux2-pro", "seedream-pro", "seedream", "standard", "nano-pro", "lite"];
+    const others = fallbackOrder.map((id) => IMAGE_TIERS[id as keyof typeof IMAGE_TIERS]).filter((t) => t && t.id !== tier.id).slice(0, 2);
     const adults = allRefs.filter((c) => !isChild(c));
     const noKidsScene = { ...scene, frame_prompt: scene.frame_prompt + " Only the adults are in this shot; any child is out of frame." };
 

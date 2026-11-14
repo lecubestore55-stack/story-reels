@@ -193,7 +193,12 @@ export async function writeStory(args: {
           ? `\n- FAST CUTS: each clip is generated at ${settings.clipSeconds}s but only its first ${shown}s are shown. Put the key action in the first ${shown} seconds of each shot, one simple action per shot, like a quickly edited TV drama (reaction shots, close-ups, wide shots).` +
             `\n- Spoken lines must fit in ${shown}s: at most ${Math.max(4, Math.round(shown * 2.5))} words, or null.`
           : `\n- About ${settings.clipSeconds} seconds per scene.`) +
-        `\n- Hook text and any dialogue in ${settings.language}.\n- Total reel length about ${Math.round(settings.sceneCount * shown)} seconds.`
+        `\n- Hook text, end card and all dialogue in ${settings.language}: natural spoken language a local would use, not a literal translation.` +
+        (settings.country
+          ? `\n- Audience: ${settings.country}. Adapt the story to it: first names common in ${settings.country}, homes, streets, cars, ` +
+            `clothes and food typical there, people who look like the local population, and situations that feel natural in ${settings.country}.`
+          : "") +
+        `\n- Total reel length about ${Math.round(settings.sceneCount * shown)} seconds.`
       );
     })(),
     `Ending (very important): the reel is a TEASER for the full story on our website. The last scene must stop at the moment of highest tension, right BEFORE the answer or the payoff (a shocked face, a door about to open, a hidden object half-seen, a line cut off). Do not resolve the story in the video. The end_text card then invites viewers to read what happened next in the comments.`,

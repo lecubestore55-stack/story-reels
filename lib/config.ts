@@ -21,7 +21,7 @@ export const config = {
 };
 
 // ---------------------------------------------------------------- images
-export type ImageTierId = "flux2-pro" | "seedream" | "seedream-pro" | "standard" | "lite";
+export type ImageTierId = "nano-pro" | "standard" | "flux2-pro" | "seedream" | "seedream-pro" | "lite";
 export type Aspect = "9:16" | "3:4";
 
 export interface ImageTier {
@@ -57,9 +57,20 @@ const nanoInput: ImageTier["buildInput"] = ({ prompt, aspect, imageUrls }) => ({
 });
 
 export const IMAGE_TIERS: Record<ImageTierId, ImageTier> = {
+  "nano-pro": {
+    id: "nano-pro",
+    label: "Nano Banana Pro — most realistic skin & faces ($0.15/image)",
+    textToImage: process.env.FAL_NANO_PRO_T2I || "fal-ai/nano-banana-pro",
+    edit: process.env.FAL_NANO_PRO_EDIT || "fal-ai/nano-banana-pro/edit",
+    priceUsd: Number(process.env.FAL_NANO_PRO_PRICE_USD || 0.15),
+    buildInput: ({ prompt, aspect, imageUrls }) => ({
+      prompt, aspect_ratio: aspect, resolution: "2K", num_images: 1, output_format: "png",
+      ...(imageUrls?.length ? { image_urls: imageUrls } : {}),
+    }),
+  },
   "flux2-pro": {
     id: "flux2-pro",
-    label: "FLUX.2 Pro — most realistic people (~$0.05/image)",
+    label: "FLUX.2 Pro — realistic places/objects, permissive filter (~$0.05/image)",
     textToImage: process.env.FAL_FLUX2_T2I || "fal-ai/flux-2-pro",
     edit: process.env.FAL_FLUX2_EDIT || "fal-ai/flux-2-pro/edit",
     priceUsd: Number(process.env.FAL_FLUX2_PRICE_USD || 0.05),
@@ -96,7 +107,7 @@ export const IMAGE_TIERS: Record<ImageTierId, ImageTier> = {
   },
   standard: {
     id: "standard",
-    label: "Nano Banana 2 — sharp, stricter filter (~$0.08/image)",
+    label: "Nano Banana 2 — very realistic people, best value (~$0.08/image)",
     textToImage: process.env.FAL_IMAGE_MODEL || "fal-ai/nano-banana-2",
     edit: process.env.FAL_IMAGE_EDIT_MODEL || "fal-ai/nano-banana-2/edit",
     priceUsd: Number(process.env.FAL_IMAGE_PRICE_USD || 0.08),
@@ -235,6 +246,7 @@ export interface ProjectSettings {
   endCard: boolean;        // curiosity card over the last seconds, pointing to the full story
   autoRun: boolean;        // run every step without stopping for review
   language: string;        // language of the hook text and any dialogue
+  country: string;         // target market: names, homes, clothes and situations are adapted to it ("" = no adaptation)
   instructions: string;    // extra direction for the writer (audience, country, tone…)
   storyMode: StoryMode;    // original = new story with the same emotion; remake = same story, new look
   drama: DramaLevel;       // safe = no physical conflict; strong = slaps/pushes between adults, kids only implied in danger
@@ -248,7 +260,7 @@ export const LOOKS: Record<LookId, { label: string; prompt: string }> = {
   "tv-drama": {
     label: "TV drama — cinematic, blurred background (recommended)",
     prompt:
-      "Shot like a high-end American TV drama: cinema camera with an 85mm lens at f/1.8, shallow depth of field with a softly " +
+      "Real photograph, shot like a high-end American TV drama: cinema camera with an 85mm lens at f/1.8, shallow depth of field with a softly " +
       "blurred background, soft natural daylight, gentle contrast, realistic color grade. Real skin texture with pores and fine " +
       "lines, natural hair strands, detailed fabric. Expressive, believable acting. Sharp focus on the main face. " +
       "Unedited look: muted natural color grading like Kodak Portra film, no beauty retouching, no plastic or waxy skin, " +
@@ -274,7 +286,7 @@ export type StoryMode = "original" | "remake";
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   videoModel: "veo3.1-lite",
-  imageTier: "flux2-pro",
+  imageTier: "standard",
   sceneCount: 3,
   shotSeconds: 0,
   clipSeconds: 6,
@@ -284,6 +296,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   endCard: true,
   autoRun: false,
   language: "English",
+  country: "United States",
   instructions: "",
   storyMode: "original",
   drama: "safe",
@@ -306,6 +319,7 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     endCard: s.endCard === undefined ? true : Boolean(s.endCard),
     autoRun: Boolean(s.autoRun),
     language: String(s.language || "English").slice(0, 40),
+    country: String(s.country ?? "").slice(0, 60),
     instructions: String(s.instructions || "").slice(0, 2000),
     storyMode: s.storyMode === "remake" ? "remake" : "original",
     drama: s.drama === "strong" ? "strong" : "safe",
@@ -354,3 +368,30 @@ export function recommendTiming(shots: { duration: number; count: number; avg: n
   if (shotSeconds >= clipSeconds) shotSeconds = 0;
   return { sceneCount, clipSeconds, shotSeconds };
 }
+
+/** Target markets. All use scripts the burn-in font supports (Latin, Cyrillic, Greek). */
+export const MARKETS: { id: string; flag: string; country: string; language: string }[] = [
+  { id: "us", flag: "🇺🇸", country: "United States", language: "English" },
+  { id: "uk", flag: "🇬🇧", country: "United Kingdom", language: "English (British)" },
+  { id: "ro", flag: "🇷🇴", country: "Romania", language: "Romanian" },
+  { id: "pl", flag: "🇵🇱", country: "Poland", language: "Polish" },
+  { id: "fr", flag: "🇫🇷", country: "France", language: "French" },
+  { id: "de", flag: "🇩🇪", country: "Germany", language: "German" },
+  { id: "it", flag: "🇮🇹", country: "Italy", language: "Italian" },
+  { id: "es", flag: "🇪🇸", country: "Spain", language: "Spanish (Spain)" },
+  { id: "mx", flag: "🇲🇽", country: "Mexico", language: "Spanish (Latin America)" },
+  { id: "br", flag: "🇧🇷", country: "Brazil", language: "Portuguese (Brazil)" },
+  { id: "pt", flag: "🇵🇹", country: "Portugal", language: "Portuguese (Portugal)" },
+  { id: "nl", flag: "🇳🇱", country: "Netherlands", language: "Dutch" },
+  { id: "cz", flag: "🇨🇿", country: "Czech Republic", language: "Czech" },
+  { id: "hu", flag: "🇭🇺", country: "Hungary", language: "Hungarian" },
+  { id: "gr", flag: "🇬🇷", country: "Greece", language: "Greek" },
+  { id: "bg", flag: "🇧🇬", country: "Bulgaria", language: "Bulgarian" },
+  { id: "rs", flag: "🇷🇸", country: "Serbia", language: "Serbian" },
+  { id: "hr", flag: "🇭🇷", country: "Croatia", language: "Croatian" },
+  { id: "tr", flag: "🇹🇷", country: "Turkey", language: "Turkish" },
+  { id: "ua", flag: "🇺🇦", country: "Ukraine", language: "Ukrainian" },
+  { id: "se", flag: "🇸🇪", country: "Sweden", language: "Swedish" },
+  { id: "ci", flag: "🇨🇮", country: "Côte d'Ivoire", language: "French (West Africa)" },
+  { id: "sn", flag: "🇸🇳", country: "Senegal", language: "French (West Africa)" },
+];

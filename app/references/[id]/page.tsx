@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { DEFAULT_SETTINGS, IMAGE_TIERS, LOOKS, VIDEO_MODELS, recommendTiming, estimateVideoCost, normalizeSettings, type ProjectSettings } from "@/lib/config";
+import { DEFAULT_SETTINGS, IMAGE_TIERS, LOOKS, MARKETS, VIDEO_MODELS, recommendTiming, estimateVideoCost, normalizeSettings, type ProjectSettings } from "@/lib/config";
 import type { Analysis } from "@/lib/types";
 import { Badge, api, money, postJson, usePolling } from "../../ui";
 
@@ -200,8 +200,25 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
                 </select>
               </div>
               <div className="field">
-                <label>Language of hook text / dialogue</label>
-                <input type="text" value={settings.language} onChange={(e) => set({ language: e.target.value })} />
+                <label>Market (country &amp; language)</label>
+                <select
+                  value={MARKETS.find((m) => m.country === s.country && m.language === s.language)?.id ?? "custom"}
+                  onChange={(e) => {
+                    const m = MARKETS.find((x) => x.id === e.target.value);
+                    if (m) set({ country: m.country, language: m.language });
+                    else set({ country: "", language: s.language });
+                  }}
+                >
+                  {MARKETS.map((m) => <option key={m.id} value={m.id}>{m.flag} {m.country} — {m.language}</option>)}
+                  <option value="custom">✏️ Other…</option>
+                </select>
+                {!MARKETS.some((m) => m.country === s.country && m.language === s.language) && (
+                  <div className="row" style={{ marginTop: 6, flexWrap: "nowrap" }}>
+                    <input type="text" placeholder="Country" value={settings.country} onChange={(e) => set({ country: e.target.value })} />
+                    <input type="text" placeholder="Language" value={settings.language} onChange={(e) => set({ language: e.target.value })} />
+                  </div>
+                )}
+                <span className="muted small">Hook, dialogue, subtitles and end card in this language; names, homes and people adapted to the country.</span>
               </div>
               <div className="field">
                 <label>How many different reels</label>
