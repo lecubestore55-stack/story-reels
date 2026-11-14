@@ -25,7 +25,15 @@ export const AnalysisSchema = z.object({
   on_screen_text: z.array(z.string()),
   transcript: z.string(),
 });
-export type Analysis = z.infer<typeof AnalysisSchema>;
+export const ShotStatsSchema = z.object({
+  duration: z.number(),
+  count: z.number(),
+  avg: z.number(),
+  durations: z.array(z.number()),
+});
+export type ShotStats = z.infer<typeof ShotStatsSchema>;
+
+export type Analysis = z.infer<typeof AnalysisSchema> & { shots?: ShotStats };
 
 // ---------- Claude: the new original story ----------
 export const CharacterSchema = z.object({

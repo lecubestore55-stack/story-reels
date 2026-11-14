@@ -7,6 +7,7 @@ import { analyzeReference } from "../lib/ai/gemini";
 import { writeStory } from "../lib/ai/claude";
 import { falError, firstImageUrl, run, submit, uploadLocal, videoUrl, waitFor } from "../lib/ai/fal";
 import { renderReel } from "../lib/ffmpeg";
+import { detectShots } from "../lib/shots";
 import type { Analysis, Story, StoryCharacter, StoryScene } from "../lib/types";
 import {
   RetryLater, addCost, removeFile, getAsset, getAssets, getProject, pool, requireStory, setProject, upsertAsset, type ProjectRow,
@@ -23,6 +24,12 @@ export async function analyzeStep(referenceId: string) {
     const ext = path.extname(ref.video_path).toLowerCase();
     const mime = ext === ".mov" ? "video/quicktime" : ext === ".webm" ? "video/webm" : "video/mp4";
     const { analysis, cost } = await analyzeReference(ref.video_path, abs(ref.video_path), ref.notes, mime);
+    // Count the real cuts with ffmpeg (more reliable than the AI's guess).
+    try {
+      (analysis as any).shots = await detectShots(abs(ref.video_path));
+    } catch (e: any) {
+      console.warn("shot detection failed:", e?.message);
+    }
     await q(
       `UPDATE story_references SET status='ready', analysis=$2, cost_usd=cost_usd+$3, updated_at=now() WHERE id=$1`,
       [referenceId, JSON.stringify(analysis), cost],

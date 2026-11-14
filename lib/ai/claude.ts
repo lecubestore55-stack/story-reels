@@ -161,6 +161,9 @@ export async function writeStory(args: {
     remake
       ? `Reference video to remake (keep its story, beats, twist and dialogue; change every visual):\n${JSON.stringify(analysis, null, 2)}`
       : `Reference breakdown (competitor video, for inspiration only):\n${JSON.stringify(analysis, null, 2)}`,
+    analysis.shots
+      ? `Reference rhythm (measured): ${analysis.shots.duration}s long, ${analysis.shots.count} shots, shot lengths in seconds: ${analysis.shots.durations.join(", ")}. Match this pacing with your scenes.`
+      : "",
     remake && analysis.transcript?.trim() ? `Dialogue to keep (transcript of the reference):\n${analysis.transcript.trim()}` : "",
     args.notes?.trim() ? `Uploader notes about the reference:\n${args.notes.trim()}` : "",
     (() => {

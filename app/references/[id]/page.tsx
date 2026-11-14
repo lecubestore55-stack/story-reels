@@ -1,7 +1,7 @@
 "use client";
 
-import { use, useState } from "react";
-import { DEFAULT_SETTINGS, IMAGE_TIERS, LOOKS, VIDEO_MODELS, estimateVideoCost, normalizeSettings, type ProjectSettings } from "@/lib/config";
+import { use, useEffect, useState } from "react";
+import { DEFAULT_SETTINGS, IMAGE_TIERS, LOOKS, VIDEO_MODELS, recommendTiming, estimateVideoCost, normalizeSettings, type ProjectSettings } from "@/lib/config";
 import type { Analysis } from "@/lib/types";
 import { Badge, api, money, postJson, usePolling } from "../../ui";
 
@@ -25,6 +25,14 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
     (d) => RUNNING.has(d.status) || d.projects.some((p) => RUNNING.has(p.status)),
   );
   const [settings, setSettings] = useState<ProjectSettings>(DEFAULT_SETTINGS);
+  const [autoTiming, setAutoTiming] = useState(true);
+  const shots = data?.analysis?.shots;
+  // Match the reference's rhythm automatically (re-computed when the video model changes).
+  useEffect(() => {
+    if (!autoTiming) return;
+    const rec = recommendTiming(shots, settings.videoModel);
+    if (rec) setSettings((old) => ({ ...old, ...rec }));
+  }, [autoTiming, shots?.duration, shots?.count, settings.videoModel]);
   const [count, setCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -145,6 +153,18 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
                 </p>
               )}
             </div>
+            {shots && (
+              <div className="alert ok small" style={{ marginBottom: 12 }}>
+                <b>Reference rhythm:</b> {shots.duration}s, {shots.count} shot{shots.count === 1 ? "" : "s"} (≈{shots.avg}s each).{" "}
+                <label className="check" style={{ display: "inline-flex", margin: "0 0 0 8px" }}>
+                  <input type="checkbox" checked={autoTiming} onChange={(e) => setAutoTiming(e.target.checked)} />
+                  Match it automatically
+                </label>
+                {autoTiming && (
+                  <span className="muted"> → {s.sceneCount} clips × {s.clipSeconds}s{s.shotSeconds ? `, ${s.shotSeconds}s shown per shot` : ""} with {VIDEO_MODELS[s.videoModel].label.split(" —")[0]}.</span>
+                )}
+              </div>
+            )}
             <div className="grid g3">
               <div className="field">
                 <label>Video model</label>
@@ -166,15 +186,15 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
               </div>
               <div className="field">
                 <label>Scenes (clips)</label>
-                <input type="number" min={1} max={12} value={settings.sceneCount} onChange={(e) => set({ sceneCount: Number(e.target.value) })} />
+                <input type="number" min={1} max={12} value={settings.sceneCount} onChange={(e) => { setAutoTiming(false); set({ sceneCount: Number(e.target.value) }); }} />
               </div>
               <div className="field">
                 <label>Seconds per clip ({model.minSeconds}–{model.maxSeconds})</label>
-                <input type="number" min={model.minSeconds} max={model.maxSeconds} value={settings.clipSeconds} onChange={(e) => set({ clipSeconds: Number(e.target.value) })} />
+                <input type="number" min={model.minSeconds} max={model.maxSeconds} value={settings.clipSeconds} onChange={(e) => { setAutoTiming(false); set({ clipSeconds: Number(e.target.value) }); }} />
               </div>
               <div className="field">
                 <label>Shot length in final video (fast cuts)</label>
-                <select value={String(s.shotSeconds)} onChange={(e) => set({ shotSeconds: Number(e.target.value) })}>
+                <select value={String(s.shotSeconds)} onChange={(e) => { setAutoTiming(false); set({ shotSeconds: Number(e.target.value) }); }}>
                   <option value="0">Whole clip ({s.clipSeconds}s)</option>
                   {[1.5, 2, 2.5, 3].filter((v) => v < s.clipSeconds).map((v) => <option key={v} value={v}>{v}s per shot (trim)</option>)}
                 </select>

@@ -319,3 +319,38 @@ export function estimateVideoCost(s: ProjectSettings, characterCount = 3): numbe
   const images = (characterCount + s.sceneCount) * IMAGE_TIERS[s.imageTier].priceUsd;
   return Math.round((clips + images) * 100) / 100;
 }
+
+/**
+ * Pick scene count, clip length and shot length that reproduce the reference's rhythm
+ * with a given video model (each model has its own min/max clip length).
+ */
+export function recommendTiming(shots: { duration: number; count: number; avg: number } | null | undefined, videoModel: VideoModelId) {
+  const m = VIDEO_MODELS[videoModel];
+  if (!shots || !shots.duration) return null;
+  const D = shots.duration;
+  const N = Math.max(1, shots.count);
+  const avg = D / N;
+  let sceneCount: number, clipSeconds: number, shotSeconds = 0;
+  if (avg < m.minSeconds) {
+    // Fast cuts: generate the shortest clip the model allows and keep only the first part of each.
+    shotSeconds = Math.max(1.5, Math.round(avg * 2) / 2);
+    sceneCount = Math.min(12, Math.max(1, Math.round(D / shotSeconds)));
+    shotSeconds = Math.max(1.5, Math.round((D / sceneCount) * 2) / 2);
+    clipSeconds = m.minSeconds;
+  } else if (avg > m.maxSeconds) {
+    // One long take: choose the fewest clips whose allowed lengths add up closest to the reference.
+    let best = { n: 1, len: m.maxSeconds, err: Infinity };
+    for (let n = Math.max(1, Math.ceil(D / m.maxSeconds)); n <= 12; n++) {
+      const len = m.snapSeconds(D / n);
+      const err = Math.abs(n * len - D);
+      if (err < best.err - 0.5) best = { n, len, err };
+    }
+    sceneCount = best.n;
+    clipSeconds = best.len;
+  } else {
+    sceneCount = Math.min(12, N);
+    clipSeconds = m.snapSeconds(D / sceneCount);
+  }
+  if (shotSeconds >= clipSeconds) shotSeconds = 0;
+  return { sceneCount, clipSeconds, shotSeconds };
+}
