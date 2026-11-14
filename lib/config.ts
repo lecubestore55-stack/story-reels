@@ -21,7 +21,7 @@ export const config = {
 };
 
 // ---------------------------------------------------------------- images
-export type ImageTierId = "nano-pro" | "standard" | "flux2-pro" | "seedream" | "seedream-pro" | "lite";
+export type ImageTierId = "nano-pro" | "standard" | "gpt-image" | "flux2-pro" | "seedream" | "seedream-pro" | "lite";
 export type Aspect = "9:16" | "3:4";
 
 export interface ImageTier {
@@ -65,6 +65,20 @@ export const IMAGE_TIERS: Record<ImageTierId, ImageTier> = {
     priceUsd: Number(process.env.FAL_NANO_PRO_PRICE_USD || 0.15),
     buildInput: ({ prompt, aspect, imageUrls }) => ({
       prompt, aspect_ratio: aspect, resolution: "2K", num_images: 1, output_format: "png",
+      ...(imageUrls?.length ? { image_urls: imageUrls } : {}),
+    }),
+  },
+  "gpt-image": {
+    id: "gpt-image",
+    label: "GPT Image 2.5 (OpenAI) — natural light & textures (~$0.10/image)",
+    textToImage: process.env.FAL_GPT_IMAGE_T2I || "openai/gpt-image-2.5/flare/text-to-image",
+    edit: process.env.FAL_GPT_IMAGE_EDIT || "openai/gpt-image-2.5/flare/edit",
+    priceUsd: Number(process.env.FAL_GPT_IMAGE_PRICE_USD || 0.1),
+    buildInput: ({ prompt, aspect, imageUrls }) => ({
+      prompt,
+      image_size: aspect === "9:16" ? { width: 1024, height: 1792 } : { width: 1152, height: 1536 },
+      quality: process.env.FAL_GPT_IMAGE_QUALITY || "high",
+      output_format: "png",
       ...(imageUrls?.length ? { image_urls: imageUrls } : {}),
     }),
   },

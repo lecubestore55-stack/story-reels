@@ -91,20 +91,42 @@ export async function charactersStep(projectId: string, payload: { only?: string
   const tier = IMAGE_TIERS[p.settings.imageTier];
 
   const errors = await pool(list, 3, async (c) => {
-    const prompt = characterPrompt(c) + (payload.note ? ` ${payload.note}` : "");
-    await upsertAsset(projectId, "character", c.key, { status: "generating", error: null, prompt, fal_endpoint: tier.textToImage });
-    try {
-      const out = await run(tier.textToImage, tier.buildInput({ prompt, aspect: "3:4" }));
-      const url = firstImageUrl(out);
-      const rel = `projects/${projectId}/characters/${c.key}_${stamp()}.png`;
-      await downloadTo(url, rel);
-      await addCost(projectId, tier.priceUsd);
-      await upsertAsset(projectId, "character", c.key, { status: "ready", path: rel, remote_url: url });
-    } catch (e) {
-      const msg = `${c.name}: ${falError(e)}`;
-      await upsertAsset(projectId, "character", c.key, { status: "failed", error: msg });
-      throw new Error(msg);
+    const base = characterPrompt(c) + (payload.note ? ` ${payload.note}` : "");
+    // Children's portraits get an explicitly wholesome framing; blocked prompts are retried calmer and on other models.
+    const kid = isChild(c) ? " Wholesome family photo of a happy, healthy, well-cared-for child, fully dressed, standing next to nothing dangerous." : "";
+    const fallbackOrder = ["flux2-pro", "gpt-image", "seedream-pro", "seedream", "standard", "nano-pro", "lite"];
+    const others = fallbackOrder.map((id) => IMAGE_TIERS[id as keyof typeof IMAGE_TIERS]).filter((t) => t && t.id !== tier.id).slice(0, 2);
+    const attempts = [
+      { prompt: base, tier },
+      { prompt: soften(base) + kid, tier },
+      ...others.map((t) => ({ prompt: soften(base) + kid, tier: t })),
+    ];
+    await upsertAsset(projectId, "character", c.key, { status: "generating", error: null, prompt: base, fal_endpoint: tier.textToImage });
+    let lastMsg = "";
+    for (let i = 0; i < attempts.length; i++) {
+      const a = attempts[i];
+      try {
+        const out = await run(a.tier.textToImage, a.tier.buildInput({ prompt: a.prompt, aspect: "3:4" }));
+        const url = firstImageUrl(out);
+        const rel = `projects/${projectId}/characters/${c.key}_${stamp()}.png`;
+        await downloadTo(url, rel);
+        await addCost(projectId, a.tier.priceUsd);
+        await upsertAsset(projectId, "character", c.key, {
+          status: "ready", path: rel, remote_url: url, prompt: a.prompt, fal_endpoint: a.tier.textToImage,
+          error: i > 0 ? `Note: first try was blocked by the safety filter; made on attempt ${i + 1}.` : null,
+        });
+        return;
+      } catch (e) {
+        lastMsg = falError(e);
+        if (!isPolicyError(lastMsg)) break;
+        console.warn(`Character ${c.name} blocked by safety filter (attempt ${i + 1}/${attempts.length})`);
+      }
     }
+    const msg = `${c.name}: ${isPolicyError(lastMsg)
+      ? "blocked by the image safety filter even after calmer retries. Edit this character's look (neutral words, in English) and regenerate."
+      : lastMsg.slice(0, 400)}`;
+    await upsertAsset(projectId, "character", c.key, { status: "failed", error: msg });
+    throw new Error(msg);
   });
   if (errors.length) throw new Error(errors.join("\n"));
 
@@ -185,7 +207,7 @@ export async function framesStep(projectId: string, payload: { only?: number; no
     const note = payload.note ? `\nExtra direction: ${payload.note}` : "";
     const ref = String(scene.index);
     // When a Google model blocks a scene, the permissive FLUX/Seedream models are tried first.
-    const fallbackOrder = ["flux2-pro", "seedream-pro", "seedream", "standard", "nano-pro", "lite"];
+    const fallbackOrder = ["flux2-pro", "gpt-image", "seedream-pro", "seedream", "standard", "nano-pro", "lite"];
     const others = fallbackOrder.map((id) => IMAGE_TIERS[id as keyof typeof IMAGE_TIERS]).filter((t) => t && t.id !== tier.id).slice(0, 2);
     const adults = allRefs.filter((c) => !isChild(c));
     const noKidsScene = { ...scene, frame_prompt: scene.frame_prompt + " Only the adults are in this shot; any child is out of frame." };

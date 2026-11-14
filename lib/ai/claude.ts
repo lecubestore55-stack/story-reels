@@ -82,6 +82,11 @@ Production rules (AI video):
 - Each scene is ONE continuous shot that starts from a still image (frame_prompt) and animates it (motion_prompt).
 - Keep actions simple and physically plausible: walking in, kneeling, turning, pointing, faces reacting. No fast action, no crowds, no text on screen.
 - Keep the same characters, outfits and setting across scenes so they look continuous.
+- LANGUAGE OF FIELDS: write title, logline, setting, character role and visual, beat, frame_prompt and motion_prompt
+  in ENGLISH (image and video models understand English best). Only hook_text, end_text and dialogue use the
+  requested language. Character names follow the requested country.
+- Character "role" must be neutral and family-friendly (e.g. "daughter", "stepmother", "nanny"), never words like
+  neglected, abused, victim, starving. A child's "visual" describes a healthy, normally dressed child.
 - frame_prompt is the FIRST FRAME of the shot = the moment just BEFORE the action. The action itself happens in
   motion_prompt. Never put the peak or the result of the action in frame_prompt, and never freeze anyone mid-air.
   Examples: diving → frame: Rosa running to the pool edge, arms starting to lift; motion: she dives in.
@@ -124,6 +129,11 @@ Production rules (AI video):
 - Each scene is ONE continuous shot that starts from a still image (frame_prompt) and animates it (motion_prompt).
 - Map the reference beats onto the requested number of scenes in order. Keep actions simple and physically plausible.
 - Keep the same characters, outfits and setting across scenes so they look continuous.
+- LANGUAGE OF FIELDS: write title, logline, setting, character role and visual, beat, frame_prompt and motion_prompt
+  in ENGLISH (image and video models understand English best). Only hook_text, end_text and dialogue use the
+  requested language. Character names follow the requested country.
+- Character "role" must be neutral and family-friendly (e.g. "daughter", "stepmother", "nanny"), never words like
+  neglected, abused, victim, starving. A child's "visual" describes a healthy, normally dressed child.
 - frame_prompt is the FIRST FRAME of the shot = the moment just BEFORE the action. The action itself happens in
   motion_prompt. Never put the peak or the result of the action in frame_prompt, and never freeze anyone mid-air.
   Examples: diving → frame: Rosa running to the pool edge, arms starting to lift; motion: she dives in.
