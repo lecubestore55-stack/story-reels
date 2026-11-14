@@ -196,12 +196,14 @@ async function renderAt(opts: RenderOpts, width: number, threads: number) {
  * Fit a voice line to a clip: start it after a short pause and pad/trim it to exactly the clip length,
  * so the lip-sync model gets audio and video of the same duration. Returns how long the speech itself is.
  */
-export async function fitVoice(input: string, output: string, clipSeconds: number, leadSeconds = 0.3): Promise<number> {
+export async function fitVoice(input: string, output: string, clipSeconds: number, leadSeconds = 0.3, pitch = 1): Promise<number> {
   const speech = (await probe(input)).duration;
   const ms = Math.round(leadSeconds * 1000);
+  // pitch > 1 raises the voice without changing its speed (used to turn an adult voice into a child's).
+  const shift = pitch !== 1 ? `aresample=44100,asetrate=${Math.round(44100 * pitch)},aresample=44100,atempo=${(1 / pitch).toFixed(4)},` : "";
   await run("ffmpeg", [
     "-y", "-i", input,
-    "-af", `adelay=${ms}|${ms},apad`,
+    "-af", `${shift}adelay=${ms}|${ms},apad`,
     "-t", clipSeconds.toFixed(2),
     "-ar", "44100", "-ac", "2", output,
   ]);

@@ -3,8 +3,9 @@ import { config, type ProjectSettings } from "../config";
 import { StorySchema, type Analysis, type Story } from "../types";
 import { isMock, mockStory } from "../mock";
 import { routerJson } from "./router";
+import { writeRecipe } from "./recipe";
 
-const STORY_TOOL = {
+export const STORY_TOOL = {
   name: "save_story",
   description: "Save the new original story and its shot list.",
   input_schema: {
@@ -87,6 +88,10 @@ Production rules (AI video):
 - LANGUAGE OF FIELDS: write title, logline, setting, character role and visual, beat, frame_prompt and motion_prompt
   in ENGLISH (image and video models understand English best). Only hook_text, end_text and dialogue use the
   requested language. Character names follow the requested country.
+- If a scene has NO dialogue, its frame_prompt and motion_prompt must not show anyone talking or "about to speak"
+  (write "silent", "mouth closed", "stares in shock"). Talking without a line makes the video model invent English words.
+- DIALOGUE WORDING: spoken lines go through a voice content checker that blocks words about killing, death, poison,
+  suicide or weapons in ANY language. Imply them instead: "You want me gone for the money?", "What did you put in my glass?".
 - SPEAKER CHECK: the speaker is the person who SAYS the words. Read each line as that character: a child says
   "Dad/Mom" to a parent; a parent says the child's name. If the line does not fit the speaker, fix the speaker.
 - Character "role" must be neutral and family-friendly (e.g. "daughter", "stepmother", "nanny"), never words like
@@ -136,6 +141,10 @@ Production rules (AI video):
 - LANGUAGE OF FIELDS: write title, logline, setting, character role and visual, beat, frame_prompt and motion_prompt
   in ENGLISH (image and video models understand English best). Only hook_text, end_text and dialogue use the
   requested language. Character names follow the requested country.
+- If a scene has NO dialogue, its frame_prompt and motion_prompt must not show anyone talking or "about to speak"
+  (write "silent", "mouth closed", "stares in shock"). Talking without a line makes the video model invent English words.
+- DIALOGUE WORDING: spoken lines go through a voice content checker that blocks words about killing, death, poison,
+  suicide or weapons in ANY language. Imply them instead: "You want me gone for the money?", "What did you put in my glass?".
 - SPEAKER CHECK: the speaker is the person who SAYS the words. Read each line as that character: a child says
   "Dad/Mom" to a parent; a parent says the child's name. If the line does not fit the speaker, fix the speaker.
 - Character "role" must be neutral and family-friendly (e.g. "daughter", "stepmother", "nanny"), never words like
@@ -186,6 +195,7 @@ export async function writeStory(args: {
   feedback?: string;      // user's notes for a rewrite
   previous?: Story | null;
 }): Promise<{ story: Story; cost: number }> {
+  if (args.settings.kind === "recipe") return writeRecipe(args);
   if (isMock()) return { story: mockStory(args.settings), cost: 0 };
   const { analysis, settings } = args;
   const remake = settings.storyMode === "remake";
@@ -363,7 +373,7 @@ export async function ensureEnglish(story: Story): Promise<{ story: Story; cost:
   return { story: s, cost };
 }
 
-function normalize(story: Story): Story {
+export function normalize(story: Story): Story {
   // Normalise scene indexes and character references.
   const keys = new Set(story.characters.map((c) => c.key));
   story.scenes = story.scenes
@@ -376,4 +386,38 @@ function normalize(story: Story): Story {
       return { ...s, index: i, characters, dialogue, speaker };
     });
   return story;
+}
+
+
+/**
+ * Rewrite a spoken line so a voice content checker accepts it: same meaning and emotion, same language,
+ * but no words about killing, dying, poison, suicide, weapons or blood ("You want me gone for the money?").
+ */
+export async function softenLine(line: string, language: string): Promise<string | null> {
+  const prompt =
+    `This ${language} line from a family TV drama was blocked by an automatic voice content checker:\n"${line}"\n\n` +
+    `Rewrite it in ${language}, max 12 words, keeping the same meaning, tension and emotion, but WITHOUT any words about ` +
+    `killing, death, dying, poison, murder, suicide, weapons, blood or hurting. Imply it instead ` +
+    `(e.g. "you want me gone", "what did you put in my glass?"). Answer with ONLY the new line, no quotes.`;
+  try {
+    let text = "";
+    if (config.anthropicKey) {
+      const client = new Anthropic({ apiKey: config.anthropicKey });
+      const msg = await client.messages.create({ model: config.claudeModel, max_tokens: 200, messages: [{ role: "user", content: prompt }] });
+      text = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+    } else {
+      const r = await routerJson({
+        kind: "text",
+        system: "You rewrite dialogue lines for TV dramas.",
+        prompt: prompt.replace("Answer with ONLY the new line, no quotes.", 'Answer with ONLY this JSON: {"line": "<new line>"}'),
+        parse: (d: any) => d,
+      });
+      text = String((r.data as any)?.line || "");
+    }
+    text = text.trim().replace(/^["'„“”«»]+|["'„“”«»]+$/g, "").split("\n")[0].trim();
+    return text || null;
+  } catch (e: any) {
+    console.warn("Could not soften the line:", e?.message);
+    return null;
+  }
 }

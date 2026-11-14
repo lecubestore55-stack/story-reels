@@ -10,11 +10,11 @@ export const POST = route(async (req: Request) => {
   const body = await req.json();
   const referenceId = String(body.referenceId || "");
   if (!isUuid(referenceId)) return fail("Missing reference");
-  const ref = await one(`SELECT id, status FROM story_references WHERE id=$1`, [referenceId]);
+  const ref = await one(`SELECT id, status, kind FROM story_references WHERE id=$1`, [referenceId]);
   if (!ref) return fail("Reference not found", 404);
   if (ref.status === "failed") return fail("This reference failed analysis. Re-run the analysis first.");
 
-  const settings = normalizeSettings(body.settings);
+  const settings = normalizeSettings({ ...body.settings, kind: ref.kind });
   const count = Math.max(1, Math.min(5, Number(body.count) || 1));
   const ids: string[] = [];
   for (let i = 0; i < count; i++) {

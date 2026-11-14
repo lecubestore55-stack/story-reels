@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { ALL_VOICES, IMAGE_TIERS, VIDEO_MODELS, useDub, type ProjectSettings } from "@/lib/config";
-import { voiceMap } from "@/lib/voices";
+import { childPitch, voiceMap } from "@/lib/voices";
 import type { Story, StoryScene } from "@/lib/types";
 import { Badge, api, money, postJson, usePolling } from "../../ui";
 
@@ -45,6 +45,8 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   const asset = (kind: Asset["kind"], ref: string) => data.assets.find((a) => a.kind === kind && a.ref === ref);
   const story = data.story;
   const s = data.settings;
+  const recipe = s.kind === "recipe";
+  const dubbing = useDub(s) && Boolean(data.story?.scenes.some((x) => x.dialogue));
   const model = VIDEO_MODELS[s.videoModel];
   const clipCost = s.clipSeconds * model.pricePerSecond(s.audio);
   const imgPrice = IMAGE_TIERS[s.imageTier].priceUsd;
@@ -124,12 +126,16 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
       {story && (
         <div className="panel">
           <div className="row between">
-            <h2>2. Characters</h2>
+            <h2>{recipe ? "2. Dish photo" : "2. Characters"}</h2>
             <button className={current === "characters" ? "primary" : ""} disabled={busy} onClick={() => run("characters")}>
-              {reached.characters ? "Regenerate all" : "Generate characters"} (~{money(story.characters.length * imgPrice)})
+              {reached.characters ? "Regenerate all" : recipe ? "Generate dish photo" : "Generate characters"} (~{money(story.characters.length * imgPrice)})
             </button>
           </div>
-          <p className="muted small">One reference photo per character. Every scene image is built from these, so faces and outfits stay the same.</p>
+          <p className="muted small">
+            {recipe
+              ? "One photo of the finished dish. Every shot is built from it, so the layers and toppings stay the same."
+              : "One reference photo per character. Every scene image is built from these, so faces and outfits stay the same."}
+          </p>
           <div className="grid g4" style={{ marginTop: 10 }}>
             {story.characters.map((c) => {
               const a = asset("character", c.key);
@@ -190,7 +196,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
               {reached.clips ? "Regenerate all clips" : "Generate video clips"} (~{money(clipCost * story.scenes.length)})
             </button>
           </div>
-          {reached.clips && useDub(s) && (
+          {reached.clips && dubbing && (
             <div className="row" style={{ margin: "6px 0" }}>
               <button disabled={busy} onClick={() => run("voice")}>Redo all voices (no new video)</button>
               <span className="muted small">Use this after you change a line, a speaker or a voice.</span>
@@ -221,7 +227,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
               </select>
             </label>
           </div>
-          {useDub(s) && (
+          {dubbing && (
             <p className="muted small">
               Dialogue scenes are made silent, then an ElevenLabs voice says the line in {s.language} and a lip-sync model moves
               the speaker&apos;s mouth (~$0.08 extra per line). Pick each character&apos;s voice in the story editor.
@@ -245,7 +251,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                   <button disabled={busy} onClick={() => {
                     if (confirm(`Regenerate clip ${sc.index + 1}? About ${money(clipCost)}.`)) run("clips", { only: sc.index });
                   }}>Regenerate clip</button>
-                  {useDub(s) && sc.dialogue && a?.status === "ready" && (
+                  {dubbing && sc.dialogue && a?.status === "ready" && (
                     <button disabled={busy} onClick={() => run("voice", { only: sc.index })}>Redo voice (~$0.08)</button>
                   )}
                 </div>
@@ -405,7 +411,7 @@ function StoryPanel({ data, busy, run, reload, setMsg }: {
                 <textarea rows={3} value={c.visual} onChange={(e) => editChar(i, { visual: e.target.value })} />
                 <label>Voice (when dubbed)</label>
                 <select value={c.voice ?? ""} onChange={(e) => editChar(i, { voice: e.target.value })}>
-                  <option value="">Auto ({voiceMap({ characters: draft.characters.map((x) => (x.key === c.key ? { ...x, voice: null } : x)) }).get(c.key)})</option>
+                  <option value="">Auto ({voiceMap({ characters: draft.characters.map((x) => (x.key === c.key ? { ...x, voice: null } : x)) }).get(c.key)}{childPitch(c) > 1 ? " → child voice" : ""})</option>
                   {ALL_VOICES.map((v) => <option key={v} value={v}>{v}</option>)}
                 </select>
               </div>

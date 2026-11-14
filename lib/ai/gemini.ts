@@ -77,8 +77,18 @@ async function analyzeViaFal(relPath: string, notes: string | null): Promise<{ a
  * Break down the reference video. Uses the Gemini API when GEMINI_API_KEY is set,
  * otherwise Gemini through fal.ai with the same FAL_KEY as the images and videos.
  */
-export async function analyzeReference(relPath: string, absPath: string, notes: string | null, mimeType: string) {
+const RECIPE_HINT = `IMPORTANT: this is a RECIPE / FOOD reel, not a story. Analyze it as food content:
+- summary: the dish, what we see happen to it (cutting, pouring, lifting a slice, cross-section…).
+- genre: "recipe"; emotional_pattern: the satisfaction pattern (e.g. "reveal of a tall gooey layered slice in one continuous shot").
+- hook: what makes people stop scrolling in the first 2 seconds (texture, cheese pull, crunch, close-up).
+- twist: the final money shot.
+- characters: only hands / cook (no faces) and the dish itself with its exact look (layers, toppings, colors, dish/pan).
+- setting: kitchen, counter, light, props. audio: music / ASMR sounds (knife, crunch), any voice.
+Uploader notes may contain the recipe name or blog link.`;
+
+export async function analyzeReference(relPath: string, absPath: string, notes: string | null, mimeType: string, kind: "story" | "recipe" = "story") {
   if (isMock()) return { analysis: mockAnalysis(), cost: 0 };
+  if (kind === "recipe") notes = `${RECIPE_HINT}\n\n${notes || ""}`.trim();
   if (config.geminiKey) {
     try {
       return { analysis: await analyzeVideo(absPath, notes, mimeType), cost: 0 };

@@ -9,7 +9,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body>
         <header className="topbar">
-          <a className="brand" href="/">▶ <span>Story Reels Studio</span></a>
+          <a className="brand" href="/">▶ <span>Reels Studio</span></a>
+          <nav className="tabs">
+            <a href="/">📖 Stories</a>
+            <a href="/recipes">🍰 Recipes</a>
+          </nav>
           <LogoutButton />
         </header>
         <main className="wrap">{children}</main>

@@ -66,3 +66,6 @@ CREATE TABLE IF NOT EXISTS jobs (
   finished_at   timestamptz
 );
 CREATE INDEX IF NOT EXISTS jobs_queue_idx ON jobs(status, run_after, id);
+
+-- Two sides of the studio: "story" reels and "recipe" reels.
+ALTER TABLE story_references ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'story';

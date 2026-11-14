@@ -262,6 +262,7 @@ export interface ProjectSettings {
   language: string;        // language of the hook text and any dialogue
   country: string;         // target market: names, homes, clothes and situations are adapted to it ("" = no adaptation)
   instructions: string;    // extra direction for the writer (audience, country, tone…)
+  kind: ReelKind;          // story reel or recipe reel (comes from the reference)
   storyMode: StoryMode;    // original = new story with the same emotion; remake = same story, new look
   drama: DramaLevel;       // safe = no physical conflict; strong = slaps/pushes between adults, kids only implied in danger
   look: LookId;            // photographic style added to every image prompt
@@ -273,6 +274,7 @@ export interface ProjectSettings {
  * language we "dub": the clip is made silent, an ElevenLabs voice says the line in the right language,
  * and a lip-sync model moves the speaker's mouth to that audio.
  */
+export type ReelKind = "story" | "recipe";
 export type VoiceMode = "auto" | "native" | "dub";
 export const TTS_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3";
 export const TTS_PRICE_PER_CHAR = 0.0001; // $0.10 per 1000 characters
@@ -344,6 +346,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   language: "English",
   country: "United States",
   instructions: "",
+  kind: "story",
   storyMode: "original",
   drama: "safe",
   look: "tv-drama",
@@ -368,6 +371,7 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     language: String(s.language || "English").slice(0, 40),
     country: String(s.country ?? "").slice(0, 60),
     instructions: String(s.instructions || "").slice(0, 2000),
+    kind: s.kind === "recipe" ? "recipe" : "story",
     storyMode: s.storyMode === "remake" ? "remake" : "original",
     drama: s.drama === "strong" ? "strong" : "safe",
     look: LOOKS[s.look as LookId] ? (s.look as LookId) : "tv-drama",
@@ -380,7 +384,7 @@ export function estimateVideoCost(s: ProjectSettings, characterCount = 3): numbe
   const clips = s.sceneCount * s.clipSeconds * m.pricePerSecond(s.audio);
   const images = (characterCount + s.sceneCount) * IMAGE_TIERS[s.imageTier].priceUsd;
   // Dubbing: a short voice line + lip sync over each clip (roughly every scene has a line).
-  const dub = useDub(s) ? s.sceneCount * (s.clipSeconds * LIPSYNC_PRICE_PER_SECOND + 0.01) : 0;
+  const dub = useDub(s) && s.kind !== "recipe" ? s.sceneCount * (s.clipSeconds * LIPSYNC_PRICE_PER_SECOND + 0.01) : 0;
   return Math.round((clips + images + dub) * 100) / 100;
 }
 

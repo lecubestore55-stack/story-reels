@@ -7,11 +7,11 @@ import {
 import { abs, downloadTo } from "../lib/storage";
 import { enqueue } from "../lib/jobs";
 import { analyzeReference } from "../lib/ai/gemini";
-import { ensureEnglish, needsEnglish, writeStory } from "../lib/ai/claude";
+import { ensureEnglish, needsEnglish, softenLine, writeStory } from "../lib/ai/claude";
 import { falError, firstImageUrl, run, submit, uploadLocal, videoUrl, waitFor } from "../lib/ai/fal";
 import { fitVoice, probe, renderReel } from "../lib/ffmpeg";
 import { detectShots } from "../lib/shots";
-import { voiceMap } from "../lib/voices";
+import { childPitch, voiceMap } from "../lib/voices";
 import type { Analysis, Story, StoryCharacter, StoryScene } from "../lib/types";
 import {
   RetryLater, addCost, removeFile, getAsset, getAssets, getProject, pool, requireStory, setProject, upsertAsset, type ProjectRow,
@@ -38,7 +38,7 @@ export async function analyzeStep(referenceId: string) {
   try {
     const ext = path.extname(ref.video_path).toLowerCase();
     const mime = ext === ".mov" ? "video/quicktime" : ext === ".webm" ? "video/webm" : "video/mp4";
-    const { analysis, cost } = await analyzeReference(ref.video_path, abs(ref.video_path), ref.notes, mime);
+    const { analysis, cost } = await analyzeReference(ref.video_path, abs(ref.video_path), ref.notes, mime, ref.kind === "recipe" ? "recipe" : "story");
     // Count the real cuts with ffmpeg (more reliable than the AI's guess).
     try {
       (analysis as any).shots = await detectShots(abs(ref.video_path));
@@ -90,6 +90,14 @@ export async function writeStep(projectId: string, payload: { feedback?: string 
 
 // ---------------------------------------------------------------- characters
 function characterPrompt(c: StoryCharacter) {
+  if (c.role === "dish") {
+    return (
+      `Photorealistic close-up food photo of a homemade dish, vertical 9:16, the dish fills most of the frame, three-quarter ` +
+      `angle, soft natural window light, shallow depth of field, real home kitchen softly blurred behind. ${c.visual}. ` +
+      `Real food with real textures, appetizing, generous, slightly imperfect homemade look, not plastic, not CGI, not overly styled. ` +
+      `No people, no text, no logo, no brand packaging, no watermark.`
+    );
+  }
   return (
     `Photorealistic casting photo of an actor for a TV drama. Three-quarter body, standing, facing the camera, calm natural expression, ` +
     `plain soft grey background, soft window light, 85mm lens, sharp focus on the face. ${c.visual}. ` +
@@ -185,6 +193,17 @@ const isChild = (c: StoryCharacter) =>
 // ---------------------------------------------------------------- frames
 function framePrompt(p: ProjectRow, scene: StoryScene, refs: StoryCharacter[]) {
   const story = requireStory(p);
+  if (p.settings.kind === "recipe") {
+    const dish = refs.find((c) => c.role === "dish") || story.characters[0];
+    return (
+      `Create a photorealistic vertical 9:16 close-up food video still for a recipe reel. It is the FIRST frame of the shot: ` +
+      `the moment just before the action (the utensil is resting or just touching the food, nothing is lifted yet).\n` +
+      `Kitchen: ${story.setting}\nShot: ${scene.frame_prompt}\n` +
+      (dish ? `The dish must look exactly like the reference image: ${dish.visual}\n` : "") +
+      `The food fills most of the frame, appetizing real textures, soft natural light, shallow depth of field. ` +
+      `Only hands may appear, no faces. No text, no captions, no logo, no brand packaging, no watermark.`
+    );
+  }
   const people = refs.length
     ? `\nCharacters — keep each person's face, hair, skin tone, body and outfit exactly as in their reference image:\n` +
       refs.map((c, i) => `- Reference image ${i + 1}: ${c.name} (${c.role}) — ${c.visual}`).join("\n")
@@ -291,6 +310,18 @@ export function motionPrompt(scene: StoryScene, story?: Story | null, opts: { la
       line = ` DIALOGUE — only ${who} speaks${lang}, facing the camera with clear lip movement, saying: "${scene.dialogue}".${quiet}`;
     }
   }
+  const recipe = story?.characters.some((c) => c.role === "dish");
+  if (recipe) {
+    return (
+      `${scene.motion_prompt} Slow, smooth and satisfying, real food physics (soft layers, crumbs, creamy texture), ` +
+      `the camera stays close on the food with a gentle push-in. Only the cook's hands, no faces. No voice, no talking, ` +
+      `no music; only natural kitchen sounds (utensil, plate, crunch). No on-screen text.`
+    );
+  }
+  if (!scene.dialogue) {
+    // No line in this scene: stop the model from making someone talk (it otherwise invents English speech).
+    line = " Nobody speaks in this shot: mouths stay closed, only facial expressions and body language.";
+  }
   return (
     `${scene.motion_prompt}${line} Realistic natural human motion and expressions, faces and clothing stay consistent ` +
     `with the first frame, vertical framing, cinematic but believable. No on-screen text or subtitles.`
@@ -299,15 +330,58 @@ export function motionPrompt(scene: StoryScene, story?: Story | null, opts: { la
 
 // ---------------------------------------------------------------- voices (dubbing)
 /** Say the scene's line with ElevenLabs in the story language and lip-sync the clip to it. */
+async function saveDialogue(projectId: string, index: number, dialogue: string) {
+  const fresh = await getProject(projectId);
+  if (!fresh.story) return;
+  const story = structuredClone(fresh.story) as Story;
+  const sc = story.scenes.find((x) => x.index === index);
+  if (sc) sc.dialogue = dialogue;
+  await setProject(projectId, { story });
+}
+
 async function dubClip(projectId: string, settings: ProjectSettings, story: Story, scene: StoryScene, clipRel: string): Promise<string> {
   const voice = voiceMap(story).get(scene.speaker || "") || "Sarah";
-  const text = scene.dialogue!.trim();
-  const tts = await run(TTS_ENDPOINT, {
-    text,
-    voice,
-    language_code: languageCode(settings.language),
-    stability: 0.5,
-  });
+  let text = scene.dialogue!.trim();
+  const code = languageCode(settings.language);
+  // Several ElevenLabs models on fal: if one's content checker refuses, the next may accept.
+  const engines: { endpoint: string; input: (t: string) => Record<string, unknown> }[] = [
+    { endpoint: TTS_ENDPOINT, input: (t) => ({ text: t, voice, language_code: code, stability: 0.5 }) },
+    { endpoint: "fal-ai/elevenlabs/tts/turbo-v2.5", input: (t) => ({ text: t, voice, language_code: code, stability: 0.5 }) },
+    { endpoint: "fal-ai/elevenlabs/tts/multilingual-v2", input: (t) => ({ text: t, voice, stability: 0.5 }) },
+  ];
+  const sayAll = async (t: string) => {
+    let last: unknown;
+    for (const e of engines) {
+      try {
+        return await run(e.endpoint, e.input(t));
+      } catch (err) {
+        last = err;
+        if (!isPolicyError(falError(err))) throw err;
+        console.warn(`Scene ${scene.index + 1}: ${e.endpoint} refused the line, trying the next voice model`);
+      }
+    }
+    throw last;
+  };
+  let tts: any;
+  try {
+    tts = await sayAll(text);
+  } catch (e) {
+    // fal's content checker blocks words like "kill/die/poison" (even in Romanian). Say the same thing
+    // in a softer way that keeps the drama, retry, and update the line so the subtitle matches the voice.
+    if (!isPolicyError(falError(e))) throw e;
+    const softer = await softenLine(text, settings.language);
+    if (!softer || softer === text) throw new Error(`The voice checker refused the line "${text}". Rewrite it without words like kill/die/poison and press Redo voice.`);
+    console.warn(`Scene ${scene.index + 1}: line blocked by the voice checker, softened: "${text}" → "${softer}"`);
+    try {
+      tts = await sayAll(softer);
+    } catch (e2) {
+      if (!isPolicyError(falError(e2))) throw e2;
+      throw new Error(`The voice checker refused "${text}" and the softer "${softer}". Change the line in the story editor and press Redo voice.`);
+    }
+    text = softer;
+    await saveDialogue(projectId, scene.index, softer);
+    scene.dialogue = softer;
+  }
   await addCost(projectId, Math.max(text.length, 50) * TTS_PRICE_PER_CHAR);
   const audioUrl = tts?.audio?.url;
   if (!audioUrl) throw new Error("the voice model returned no audio");
@@ -315,7 +389,8 @@ async function dubClip(projectId: string, settings: ProjectSettings, story: Stor
   const base = `projects/${projectId}/voice/scene${scene.index}_${stamp()}`;
   await downloadTo(audioUrl, `${base}.mp3`);
   const clipSeconds = (await probe(abs(clipRel))).duration || settings.clipSeconds;
-  const speech = await fitVoice(abs(`${base}.mp3`), abs(`${base}.wav`), clipSeconds);
+  const pitch = childPitch(story.characters.find((c) => c.key === scene.speaker));
+  const speech = await fitVoice(abs(`${base}.mp3`), abs(`${base}.wav`), clipSeconds, 0.3, pitch);
   if (speech + 0.3 > clipSeconds) console.warn(`Scene ${scene.index + 1}: the line is longer than the clip and will be cut`);
 
   const out = await run(LIPSYNC_ENDPOINT, {
@@ -343,7 +418,8 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
 
   await setProject(projectId, { status: "clips", error: null });
   const seconds = model.snapSeconds(p.settings.clipSeconds);
-  const dub = useDub(p.settings);
+  // Dub only stories that actually have lines; recipe reels keep the model's natural kitchen sounds.
+  const dub = useDub(p.settings) && story.scenes.some((sc) => sc.dialogue);
 
   const errors = await pool(scenes, 4, async (scene) => {
     const ref = String(scene.index);
@@ -351,10 +427,11 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
     let endpoint = model.endpoint;
     let requestId: string;
     const dubThis = dub && Boolean(scene.dialogue);
-    // Dubbed scenes are made silent (cheaper, and no English mumbling under the real voice).
-    const audio = dubThis ? false : p.settings.audio;
+    // In dub mode EVERY clip is silent: video models invent English talking when they make sound,
+    // even in scenes without a line. The real voice is added by TTS + lip sync; add music on the final step.
+    const audio = dub ? false : p.settings.audio;
     const mp = (soft = false) => {
-      const t = motionPrompt(scene, story, { language: p.settings.language, dub: dubThis });
+      const t = motionPrompt(scene, story, { language: p.settings.language, dub });
       return soft ? soften(t) : t;
     };
     // Resume a request that was already paid for if the worker restarted mid-generation.

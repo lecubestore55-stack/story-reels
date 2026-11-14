@@ -91,3 +91,26 @@ export function mockStory(s: ProjectSettings): Story {
     },
   };
 }
+
+export function mockRecipe(s: ProjectSettings): Story {
+  return {
+    title: "Oreo cream poke cake",
+    logline: "A spatula lifts a tall slice of Oreo cream cake to show every layer.",
+    hook_text: "The dessert everyone asks me for 😍",
+    end_text: "Full recipe in the comments 👇",
+    setting: "Bright home kitchen, white quartz counter, soft window light, blurred wooden cabinets, a cook's hands with light skin and a beige sleeve",
+    characters: [
+      { key: "dish", name: "Oreo cream poke cake", role: "dish", visual: "glass 9x13 baking dish, dark chocolate cake base, thick white cookies-and-cream mousse layer, crushed Oreo topping" },
+    ],
+    scenes: Array.from({ length: s.sceneCount }, (_, i) => ({
+      index: i,
+      beat: i === 0 ? "Spatula cuts and lifts the first slice" : "Close-up of the slice on a white plate",
+      characters: ["dish"],
+      frame_prompt: `Shot ${i + 1}: the full dish, spatula resting on top, before the cut`,
+      motion_prompt: `Shot ${i + 1}: the spatula slowly lifts a tall slice showing the layers`,
+      dialogue: null,
+      speaker: null,
+    })),
+    originality: { kept_from_reference: ["one-shot slice reveal"], changed: ["different dessert", "different kitchen"], risk_notes: "none" },
+  };
+}

@@ -11,6 +11,7 @@ interface RefDetail {
   status: string;
   error: string | null;
   notes: string | null;
+  kind?: "story" | "recipe";
   video_url: string;
   analysis: Analysis | null;
   projects: { id: string; title: string; status: string; error: string | null; cost_usd: string; final_url: string | null; logline: string | null }[];
@@ -40,7 +41,8 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
   if (error) return <div className="alert bad">{error}</div>;
   if (!data) return <p className="muted">Loading…</p>;
   const a = data.analysis;
-  const s = normalizeSettings(settings);
+  const recipe = data.kind === "recipe";
+  const s = normalizeSettings({ ...settings, kind: recipe ? "recipe" : "story" });
   const model = VIDEO_MODELS[s.videoModel];
   const set = (patch: Partial<ProjectSettings>) => setSettings((old) => ({ ...old, ...patch }));
 
@@ -62,7 +64,7 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
 
   return (
     <>
-      <p className="small"><a href="/">← All proven stories</a></p>
+      <p className="small">{recipe ? <a href="/recipes">← All recipe reels</a> : <a href="/">← All proven stories</a>}</p>
       <div className="row between">
         <h1>{data.title}</h1>
         <div className="row">
@@ -75,7 +77,7 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
             onClick={async () => {
               if (!confirm("Delete this reference and all reels made from it?")) return;
               await api(`/api/references/${id}`, { method: "DELETE" });
-              window.location.href = "/";
+              window.location.href = recipe ? "/recipes" : "/";
             }}
           >
             Delete
@@ -124,8 +126,20 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
           </div>
 
           <div className="panel">
-            <h2>Make new original reels from this</h2>
-            <p className="muted small">Claude keeps only the emotional pattern and invents new characters, setting, conflict and twist. Each reel gets its own different story.</p>
+            <h2>{recipe ? "Make recipe reels in this style" : "Make new original reels from this"}</h2>
+            <p className="muted small">
+              {recipe
+                ? "Claude plans close-up satisfying shots of YOUR dish (write the recipe below), the dish photo keeps it identical in every shot, and the end card sends people to the recipe."
+                : "Claude keeps only the emotional pattern and invents new characters, setting, conflict and twist. Each reel gets its own different story."}
+            </p>
+            {recipe && (
+              <div className="field" style={{ marginTop: 12 }}>
+                <label>Recipe to show (from your blog): name + what it looks like inside. Leave empty and Claude picks a different dish.</label>
+                <textarea value={settings.instructions} onChange={(e) => set({ instructions: e.target.value })}
+                  placeholder="e.g. Tiramisu in a glass dish: ladyfingers soaked in coffee, thick mascarpone cream, cocoa on top" />
+              </div>
+            )}
+            {!recipe && <>
             <div className="field" style={{ marginTop: 12 }}>
               <label>Story mode</label>
               <select value={s.storyMode} onChange={(e) => set({ storyMode: e.target.value as any })}>
@@ -153,6 +167,7 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
                 </p>
               )}
             </div>
+            </>}
             {shots && (
               <div className="alert ok small" style={{ marginBottom: 12 }}>
                 <b>Reference rhythm:</b> {shots.duration}s, {shots.count} shot{shots.count === 1 ? "" : "s"} (≈{shots.avg}s each).{" "}
@@ -234,14 +249,14 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
                 <label className="check"><input type="checkbox" checked={settings.autoRun} onChange={(e) => set({ autoRun: e.target.checked })} /> Run all steps without review</label>
               </div>
             </div>
-            <div className="field">
+            {!recipe && <div className="field">
               <label>Direction for the writer (optional): audience, country, tone, things to avoid</label>
               <textarea value={settings.instructions} onChange={(e) => set({ instructions: e.target.value })} placeholder="e.g. US audience, older characters, ending must feel rewarding, no police" />
-            </div>
+            </div>}
             {msg && <div className="alert bad">{msg}</div>}
             <div className="row">
               <button className="primary" disabled={busy || data.status === "failed"} onClick={create}>
-                {busy ? "Creating…" : s.storyMode === "remake" ? `Make ${count} remake${count === 1 ? "" : "s"}` : `Write ${count} new stor${count === 1 ? "y" : "ies"}`}
+                {busy ? "Creating…" : recipe ? `Make ${count} recipe reel${count === 1 ? "" : "s"}` : s.storyMode === "remake" ? `Make ${count} remake${count === 1 ? "" : "s"}` : `Write ${count} new stor${count === 1 ? "y" : "ies"}`}
               </button>
               <span className="muted small">
                 Writing is nearly free. Video for one reel: about {money(estimateVideoCost(s))} ({s.sceneCount} clips × {s.clipSeconds}s generated{s.shotSeconds > 0 && s.shotSeconds < s.clipSeconds ? `, ${s.shotSeconds}s shown each → ${Math.round(s.sceneCount * s.shotSeconds)}s reel` : ""}), charged only when you generate.

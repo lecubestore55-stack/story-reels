@@ -8,12 +8,14 @@ import { fileUrl, saveBuffer } from "@/lib/storage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export const GET = route(async () => {
+export const GET = route(async (req: Request) => {
+  const kind = new URL(req.url).searchParams.get("kind") === "recipe" ? "recipe" : "story";
   const rows = await q(
-    `SELECT r.id, r.title, r.status, r.error, r.video_path, r.created_at,
+    `SELECT r.id, r.title, r.status, r.error, r.video_path, r.created_at, r.kind,
             r.analysis->>'emotional_pattern' AS pattern,
             (SELECT count(*)::int FROM projects p WHERE p.reference_id=r.id) AS reels
-       FROM story_references r ORDER BY r.created_at DESC`,
+       FROM story_references r WHERE r.kind=$1 ORDER BY r.created_at DESC`,
+    [kind],
   );
   return json(rows.map((r) => ({ ...r, video_url: fileUrl(r.video_path) })));
 });
@@ -33,10 +35,11 @@ export const POST = route(async (req: Request) => {
   await saveBuffer(rel, Buffer.from(await video.arrayBuffer()));
   const title = String(form.get("title") || "").trim() || video.name.replace(/\.[^.]+$/, "").slice(0, 80);
   const notes = String(form.get("notes") || "").trim() || null;
+  const kind = form.get("kind") === "recipe" ? "recipe" : "story";
 
   const ref = await one(
-    `INSERT INTO story_references(id, title, video_path, notes) VALUES ($1,$2,$3,$4) RETURNING id`,
-    [id, title, rel, notes],
+    `INSERT INTO story_references(id, title, video_path, notes, kind) VALUES ($1,$2,$3,$4,$5) RETURNING id, kind`,
+    [id, title, rel, notes, kind],
   );
   await enqueue("analyze", { referenceId: id });
   return json(ref, 201);
