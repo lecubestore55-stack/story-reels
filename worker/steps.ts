@@ -1,19 +1,34 @@
 import path from "node:path";
 import { one, q } from "../lib/db";
-import { IMAGE_TIERS, LOOKS, VIDEO_MODELS } from "../lib/config";
+import {
+  IMAGE_TIERS, LIPSYNC_ENDPOINT, LIPSYNC_PRICE_PER_SECOND, LOOKS,
+  TTS_ENDPOINT, TTS_PRICE_PER_CHAR, VIDEO_MODELS, languageCode, useDub, type ProjectSettings,
+} from "../lib/config";
 import { abs, downloadTo } from "../lib/storage";
 import { enqueue } from "../lib/jobs";
 import { analyzeReference } from "../lib/ai/gemini";
-import { writeStory } from "../lib/ai/claude";
+import { ensureEnglish, needsEnglish, writeStory } from "../lib/ai/claude";
 import { falError, firstImageUrl, run, submit, uploadLocal, videoUrl, waitFor } from "../lib/ai/fal";
-import { renderReel } from "../lib/ffmpeg";
+import { fitVoice, probe, renderReel } from "../lib/ffmpeg";
 import { detectShots } from "../lib/shots";
+import { voiceMap } from "../lib/voices";
 import type { Analysis, Story, StoryCharacter, StoryScene } from "../lib/types";
 import {
   RetryLater, addCost, removeFile, getAsset, getAssets, getProject, pool, requireStory, setProject, upsertAsset, type ProjectRow,
 } from "./shared";
 
 const stamp = () => Date.now().toString(36);
+
+/** Older stories (or a writer that ignored the rule) may have production fields in Romanian/Polish: translate them once. */
+async function englishStory(projectId: string, p: ProjectRow): Promise<Story> {
+  const story = requireStory(p);
+  if (!needsEnglish(story)) return story;
+  const { story: fixed, cost } = await ensureEnglish(story);
+  if (cost) await addCost(projectId, cost);
+  await setProject(projectId, { story: fixed });
+  p.story = fixed;
+  return fixed;
+}
 
 // ---------------------------------------------------------------- analyze
 export async function analyzeStep(referenceId: string) {
@@ -85,7 +100,7 @@ function characterPrompt(c: StoryCharacter) {
 
 export async function charactersStep(projectId: string, payload: { only?: string; note?: string }) {
   const p = await getProject(projectId);
-  const story = requireStory(p);
+  const story = await englishStory(projectId, p);
   await setProject(projectId, { status: "characters", error: null });
   const list = story.characters.filter((c) => !payload.only || c.key === payload.only);
   const tier = IMAGE_TIERS[p.settings.imageTier];
@@ -190,7 +205,7 @@ async function freshUrl(rel: string) {
 
 export async function framesStep(projectId: string, payload: { only?: number; note?: string }) {
   const p = await getProject(projectId);
-  const story = requireStory(p);
+  const story = await englishStory(projectId, p);
   const chars = await getAssets(projectId, "character");
   const byKey = new Map(chars.filter((a) => a.status === "ready" && a.path).map((a) => [a.ref, a]));
   const missing = story.characters.filter((c) => !byKey.has(c.key));
@@ -261,23 +276,60 @@ function shortLook(visual: string) {
   return visual.split(/[.;]/)[0].slice(0, 140);
 }
 
-export function motionPrompt(scene: StoryScene, story?: Story | null) {
+export function motionPrompt(scene: StoryScene, story?: Story | null, opts: { language?: string; dub?: boolean } = {}) {
   let line = "";
   if (scene.dialogue) {
     const sp = story?.characters.find((c) => c.key === scene.speaker);
-    if (sp) {
-      const others = story!.characters.filter((c) => c.key !== sp.key && scene.characters.includes(c.key));
-      line =
-        ` DIALOGUE — only ${sp.name} (${shortLook(sp.visual)}) speaks, facing the camera with clear lip movement, saying: "${scene.dialogue}".` +
-        (others.length ? ` ${others.map((c) => c.name).join(" and ")} stay silent with mouths closed and only react.` : "");
+    const others = sp ? story!.characters.filter((c) => c.key !== sp.key && scene.characters.includes(c.key)) : [];
+    const quiet = others.length ? ` ${others.map((c) => c.name).join(" and ")} ${others.length > 1 ? "stay" : "stays"} silent with ${others.length > 1 ? "mouths" : "mouth"} closed and only ${others.length > 1 ? "react" : "reacts"}.` : "";
+    const who = sp ? `${sp.name} (${shortLook(sp.visual)})` : "one person";
+    if (opts.dub) {
+      // The voice is added afterwards (TTS + lip sync): just keep the speaker's face clear and talking.
+      line = ` ${who} is talking: face clearly visible to the camera, natural lip movement, no other sound.${quiet}`;
     } else {
-      line = ` One person speaks, saying: "${scene.dialogue}". Everyone else stays silent.`;
+      const lang = opts.language && !/^english/i.test(opts.language) ? ` in ${opts.language}` : "";
+      line = ` DIALOGUE — only ${who} speaks${lang}, facing the camera with clear lip movement, saying: "${scene.dialogue}".${quiet}`;
     }
   }
   return (
     `${scene.motion_prompt}${line} Realistic natural human motion and expressions, faces and clothing stay consistent ` +
     `with the first frame, vertical framing, cinematic but believable. No on-screen text or subtitles.`
   );
+}
+
+// ---------------------------------------------------------------- voices (dubbing)
+/** Say the scene's line with ElevenLabs in the story language and lip-sync the clip to it. */
+async function dubClip(projectId: string, settings: ProjectSettings, story: Story, scene: StoryScene, clipRel: string): Promise<string> {
+  const voice = voiceMap(story).get(scene.speaker || "") || "Sarah";
+  const text = scene.dialogue!.trim();
+  const tts = await run(TTS_ENDPOINT, {
+    text,
+    voice,
+    language_code: languageCode(settings.language),
+    stability: 0.5,
+  });
+  await addCost(projectId, Math.max(text.length, 50) * TTS_PRICE_PER_CHAR);
+  const audioUrl = tts?.audio?.url;
+  if (!audioUrl) throw new Error("the voice model returned no audio");
+
+  const base = `projects/${projectId}/voice/scene${scene.index}_${stamp()}`;
+  await downloadTo(audioUrl, `${base}.mp3`);
+  const clipSeconds = (await probe(abs(clipRel))).duration || settings.clipSeconds;
+  const speech = await fitVoice(abs(`${base}.mp3`), abs(`${base}.wav`), clipSeconds);
+  if (speech + 0.3 > clipSeconds) console.warn(`Scene ${scene.index + 1}: the line is longer than the clip and will be cut`);
+
+  const out = await run(LIPSYNC_ENDPOINT, {
+    video_url: await freshUrl(clipRel),
+    audio_url: await freshUrl(`${base}.wav`),
+    model: "lipsync-1.9.0-beta",
+    sync_mode: "cut_off",
+  });
+  await addCost(projectId, clipSeconds * LIPSYNC_PRICE_PER_SECOND);
+  const rel = `projects/${projectId}/clips/scene${scene.index}_dub_${stamp()}.mp4`;
+  await downloadTo(videoUrl(out), rel);
+  await removeFile(`${base}.mp3`);
+  await removeFile(`${base}.wav`);
+  return rel;
 }
 
 export async function clipsStep(projectId: string, payload: { only?: number }) {
@@ -291,20 +343,28 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
 
   await setProject(projectId, { status: "clips", error: null });
   const seconds = model.snapSeconds(p.settings.clipSeconds);
+  const dub = useDub(p.settings);
 
   const errors = await pool(scenes, 4, async (scene) => {
     const ref = String(scene.index);
     let asset = await getAsset(projectId, "clip", ref);
     let endpoint = model.endpoint;
     let requestId: string;
+    const dubThis = dub && Boolean(scene.dialogue);
+    // Dubbed scenes are made silent (cheaper, and no English mumbling under the real voice).
+    const audio = dubThis ? false : p.settings.audio;
+    const mp = (soft = false) => {
+      const t = motionPrompt(scene, story, { language: p.settings.language, dub: dubThis });
+      return soft ? soften(t) : t;
+    };
     // Resume a request that was already paid for if the worker restarted mid-generation.
     if (asset?.status === "generating" && asset.fal_request_id && asset.fal_endpoint) {
       requestId = asset.fal_request_id;
       endpoint = asset.fal_endpoint;
     } else {
-      const prompt = motionPrompt(scene, story);
+      const prompt = mp();
       const imageUrl = await freshUrl(frames.get(ref)!.path!);
-      const input = model.buildInput({ prompt, imageUrl, seconds, audio: p.settings.audio });
+      const input = model.buildInput({ prompt, imageUrl, seconds, audio });
       try {
         requestId = await submit(endpoint, input);
       } catch (e) {
@@ -315,7 +375,7 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
       await upsertAsset(projectId, "clip", ref, {
         status: "generating", error: null, prompt, fal_endpoint: endpoint, fal_request_id: requestId,
       });
-      await addCost(projectId, seconds * model.pricePerSecond(p.settings.audio));
+      await addCost(projectId, seconds * model.pricePerSecond(audio));
     }
     try {
       let out: any;
@@ -325,17 +385,31 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
         if (!isPolicyError(falError(e))) throw e;
         // Blocked by the video model's safety filter: one retry with calmer wording.
         console.warn(`Scene ${scene.index + 1} clip blocked by safety filter, retrying with calmer prompt`);
-        const prompt = soften(motionPrompt(scene, story));
+        const prompt = mp(true);
         const imageUrl = await freshUrl(frames.get(ref)!.path!);
-        requestId = await submit(endpoint, model.buildInput({ prompt, imageUrl, seconds, audio: p.settings.audio }));
+        requestId = await submit(endpoint, model.buildInput({ prompt, imageUrl, seconds, audio }));
         await upsertAsset(projectId, "clip", ref, { status: "generating", prompt, fal_endpoint: endpoint, fal_request_id: requestId });
-        await addCost(projectId, seconds * model.pricePerSecond(p.settings.audio));
+        await addCost(projectId, seconds * model.pricePerSecond(audio));
         out = await waitFor(endpoint, requestId);
       }
       const url = videoUrl(out);
       const rel = `projects/${projectId}/clips/scene${scene.index}_${stamp()}.mp4`;
       await downloadTo(url, rel);
-      await upsertAsset(projectId, "clip", ref, { status: "ready", path: rel, remote_url: url, fal_request_id: null });
+      if (!dubThis) {
+        await upsertAsset(projectId, "clip", ref, { status: "ready", path: rel, remote_url: url, fal_request_id: null });
+        return;
+      }
+      // Add the voice in the story language + lip sync. If that fails, keep the silent clip and say why.
+      await upsertAsset(projectId, "clip", ref, { status: "generating", path: rel, remote_url: url, fal_request_id: null, error: "Adding the voice…" });
+      try {
+        const dubbed = await dubClip(projectId, p.settings, story, scene, rel);
+        await upsertAsset(projectId, "clip", ref, { status: "ready", path: dubbed, remote_url: null, error: null });
+      } catch (e) {
+        await upsertAsset(projectId, "clip", ref, {
+          status: "ready", path: rel, remote_url: url,
+          error: `Voice not added (${falError(e).slice(0, 200)}). The clip is silent — press "Redo voice".`,
+        });
+      }
     } catch (e) {
       const msg = `Scene ${scene.index + 1}: ${falError(e)}`;
       await upsertAsset(projectId, "clip", ref, { status: "failed", error: msg, fal_request_id: null });
@@ -345,6 +419,32 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
   if (errors.length) throw new Error(errors.join("\n"));
 
   // Rendering is free and fast, so always rebuild the reel after new clips.
+  await enqueue("render", { projectId });
+}
+
+// ---------------------------------------------------------------- voice (redo dubbing only)
+// Re-voices existing clips without paying for new video: after editing a line, a speaker or a voice.
+export async function voiceStep(projectId: string, payload: { only?: number }) {
+  const p = await getProject(projectId);
+  const story = requireStory(p);
+  const clips = new Map((await getAssets(projectId, "clip")).filter((a) => a.status === "ready" && a.path).map((a) => [a.ref, a]));
+  const scenes = story.scenes.filter((s) => s.dialogue && (payload.only === undefined || s.index === payload.only));
+  if (!scenes.length) throw new Error("No scene with dialogue to voice");
+  const missing = scenes.filter((s) => !clips.has(String(s.index)));
+  if (missing.length) throw new Error(`Generate the clips first (scenes: ${missing.map((s) => s.index + 1).join(", ")})`);
+  await setProject(projectId, { status: "clips", error: null });
+  const errors = await pool(scenes, 3, async (scene) => {
+    const ref = String(scene.index);
+    try {
+      const dubbed = await dubClip(projectId, p.settings, story, scene, clips.get(ref)!.path!);
+      await upsertAsset(projectId, "clip", ref, { status: "ready", path: dubbed, remote_url: null, error: null });
+    } catch (e) {
+      const msg = `Scene ${scene.index + 1} voice: ${falError(e).slice(0, 300)}`;
+      await upsertAsset(projectId, "clip", ref, { error: msg });
+      throw new Error(msg);
+    }
+  });
+  if (errors.length) throw new Error(errors.join("\n"));
   await enqueue("render", { projectId });
 }
 

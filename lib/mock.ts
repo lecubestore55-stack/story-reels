@@ -21,7 +21,9 @@ function ffmpeg(args: string[]) {
 export async function renderMockUrl(url: string, file: string) {
   await mkdir(path.dirname(file), { recursive: true });
   const [, kind, a, b] = url.replace("mock://", "/").split("/");
-  if (kind === "image") {
+  if (kind === "audio") {
+    await ffmpeg(["-f", "lavfi", "-i", `sine=frequency=300:duration=${a || 2}`, "-c:a", "libmp3lame", file]);
+  } else if (kind === "image") {
     const [w, h] = a.split("x");
     await ffmpeg(["-f", "lavfi", "-i", `color=c=${b || "gray"}:s=${w}x${h}`, "-frames:v", "1", file]);
   } else {

@@ -1,7 +1,8 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { IMAGE_TIERS, VIDEO_MODELS, type ProjectSettings } from "@/lib/config";
+import { ALL_VOICES, IMAGE_TIERS, VIDEO_MODELS, useDub, type ProjectSettings } from "@/lib/config";
+import { voiceMap } from "@/lib/voices";
 import type { Story, StoryScene } from "@/lib/types";
 import { Badge, api, money, postJson, usePolling } from "../../ui";
 
@@ -28,6 +29,7 @@ const JOB_LABEL: Record<string, string> = {
   characters: "Generating character reference images",
   frames: "Generating the start frame of each scene",
   clips: "Generating video clips (usually 2–6 minutes)",
+  voice: "Adding the voices (text-to-speech + lip sync)",
   render: "Joining clips into the final MP4",
 };
 
@@ -188,6 +190,12 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
               {reached.clips ? "Regenerate all clips" : "Generate video clips"} (~{money(clipCost * story.scenes.length)})
             </button>
           </div>
+          {reached.clips && useDub(s) && (
+            <div className="row" style={{ margin: "6px 0" }}>
+              <button disabled={busy} onClick={() => run("voice")}>Redo all voices (no new video)</button>
+              <span className="muted small">Use this after you change a line, a speaker or a voice.</span>
+            </div>
+          )}
           <div className="row small" style={{ margin: "6px 0" }}>
             <select value={s.videoModel} disabled={busy} style={{ width: "auto" }}
               onChange={(e) => saveSettings({ videoModel: e.target.value as any, clipSeconds: s.clipSeconds })}>
@@ -203,7 +211,22 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                 <input type="checkbox" checked={s.audio} disabled={busy} onChange={(e) => saveSettings({ audio: e.target.checked })} /> Sound
               </label>
             )}
+            <label className="row" style={{ gap: 6, margin: 0 }}>
+              Voices
+              <select value={s.voice} disabled={busy} style={{ width: "auto" }}
+                onChange={(e) => saveSettings({ voice: e.target.value as ProjectSettings["voice"] })}>
+                <option value="auto">Auto (dub when not English)</option>
+                <option value="dub">Dub: real {s.language} voice + lip sync</option>
+                <option value="native">Video model speaks (English only)</option>
+              </select>
+            </label>
           </div>
+          {useDub(s) && (
+            <p className="muted small">
+              Dialogue scenes are made silent, then an ElevenLabs voice says the line in {s.language} and a lip-sync model moves
+              the speaker&apos;s mouth (~$0.08 extra per line). Pick each character&apos;s voice in the story editor.
+            </p>
+          )}
           {reached.clips && !data.final_url && (
             <div className="row" style={{ margin: "8px 0" }}>
               <button className="primary" disabled={busy} onClick={() => run("render")}>Render final MP4 (free)</button>
@@ -222,6 +245,9 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                   <button disabled={busy} onClick={() => {
                     if (confirm(`Regenerate clip ${sc.index + 1}? About ${money(clipCost)}.`)) run("clips", { only: sc.index });
                   }}>Regenerate clip</button>
+                  {useDub(s) && sc.dialogue && a?.status === "ready" && (
+                    <button disabled={busy} onClick={() => run("voice", { only: sc.index })}>Redo voice (~$0.08)</button>
+                  )}
                 </div>
               );
             })}
@@ -377,6 +403,11 @@ function StoryPanel({ data, busy, run, reload, setMsg }: {
                 </div>
                 <label>Look (age, face, hair, outfit)</label>
                 <textarea rows={3} value={c.visual} onChange={(e) => editChar(i, { visual: e.target.value })} />
+                <label>Voice (when dubbed)</label>
+                <select value={c.voice ?? ""} onChange={(e) => editChar(i, { voice: e.target.value })}>
+                  <option value="">Auto ({voiceMap({ characters: draft.characters.map((x) => (x.key === c.key ? { ...x, voice: null } : x)) }).get(c.key)})</option>
+                  {ALL_VOICES.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
               </div>
             ))}
           </div>

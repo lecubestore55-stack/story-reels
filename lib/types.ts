@@ -41,6 +41,9 @@ export const CharacterSchema = z.object({
   name: z.string(),
   role: z.string(),
   visual: z.string(),                     // exact look: age, skin, hair, face, outfit — reused in every image
+  gender: z.preprocess((v) => (typeof v === "string" ? v.toLowerCase() : v), z.enum(["female", "male"])).nullable().optional().catch(null),
+  age: z.coerce.number().nullable().optional().catch(null),
+  voice: z.string().nullable().optional(), // ElevenLabs voice used when dialogue is dubbed
 });
 
 export const SceneSchema = z.object({
@@ -71,7 +74,7 @@ export type Story = z.infer<typeof StorySchema>;
 export type StoryCharacter = z.infer<typeof CharacterSchema>;
 export type StoryScene = z.infer<typeof SceneSchema>;
 
-export type JobType = "analyze" | "write" | "characters" | "frames" | "clips" | "render";
+export type JobType = "analyze" | "write" | "characters" | "frames" | "clips" | "voice" | "render";
 
 export interface AssetRow {
   id: number;

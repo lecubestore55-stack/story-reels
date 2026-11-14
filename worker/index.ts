@@ -5,7 +5,7 @@ import { pool as pg, one, q } from "../lib/db";
 import { config } from "../lib/config";
 import { migrate } from "../scripts/migrate";
 import { RetryLater, setProject } from "./shared";
-import { analyzeStep, charactersStep, clipsStep, framesStep, renderStep, writeStep } from "./steps";
+import { analyzeStep, charactersStep, clipsStep, framesStep, renderStep, voiceStep, writeStep } from "./steps";
 
 let stopping = false;
 
@@ -26,6 +26,7 @@ async function handle(job: any) {
     case "characters": return charactersStep(job.project_id, payload);
     case "frames": return framesStep(job.project_id, payload);
     case "clips": return clipsStep(job.project_id, payload);
+    case "voice": return voiceStep(job.project_id, payload);
     case "render": return renderStep(job.project_id);
     default: throw new Error(`Unknown job type ${job.type}`);
   }

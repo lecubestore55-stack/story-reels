@@ -10,8 +10,8 @@ const STORY_TOOL = {
   input_schema: {
     type: "object" as const,
     properties: {
-      title: { type: "string", description: "Internal title of the new story" },
-      logline: { type: "string", description: "One-sentence summary" },
+      title: { type: "string", description: "Internal title of the new story. ENGLISH." },
+      logline: { type: "string", description: "One-sentence summary. ENGLISH." },
       hook_text: { type: "string", description: "Text burned at the top of the reel, max 70 characters, creates curiosity, in the requested language" },
       end_text: { type: "string", description: "Card shown over the last 2-3 seconds that sends viewers to the full story, max 80 characters, in the requested language, e.g. 'What she found in that room… Full story in the comments 👇'. Must create curiosity, never reveal the answer." },
       setting: { type: "string", description: "Place, time of day, decor, lighting, color palette. Reused in every frame so it must be specific." },
@@ -23,11 +23,13 @@ const STORY_TOOL = {
           type: "object",
           properties: {
             key: { type: "string", description: "lowercase id with letters, digits, underscore, e.g. grandma" },
-            name: { type: "string" },
-            role: { type: "string" },
-            visual: { type: "string", description: "Exact look for image generation: age, gender, skin tone, build, face, hair, outfit with colors. Same outfit in every scene." },
+            name: { type: "string", description: "First name common in the target country" },
+            role: { type: "string", description: "Neutral role in ENGLISH, e.g. 'daughter', 'father', 'stepmother'" },
+            gender: { type: "string", enum: ["female", "male"] },
+            age: { type: "integer", description: "Age in years" },
+            visual: { type: "string", description: "Exact look for image generation: age, gender, skin tone, build, face, hair, outfit with colors. Same outfit in every scene. ENGLISH only." },
           },
-          required: ["key", "name", "role", "visual"],
+          required: ["key", "name", "role", "gender", "age", "visual"],
         },
       },
       scenes: {
@@ -38,12 +40,12 @@ const STORY_TOOL = {
           type: "object",
           properties: {
             index: { type: "integer", description: "0-based" },
-            beat: { type: "string", description: "What happens in story terms" },
+            beat: { type: "string", description: "What happens in story terms. ENGLISH." },
             characters: { type: "array", items: { type: "string" }, description: "keys of characters visible" },
-            frame_prompt: { type: "string", description: "The FIRST frame of the clip = the moment just BEFORE the action (never the peak or result): who is where, poses, expressions, framing, camera angle, and continuity details from the previous scene. Vertical 9:16. No text in image." },
-            motion_prompt: { type: "string", description: "What moves during the clip: actions, expressions, camera movement. Physically simple and realistic." },
-            dialogue: { type: ["string", "null"], description: "Optional short spoken line (max 12 words) or null. ONE speaker only." },
-            speaker: { type: ["string", "null"], description: "Key of the character who says the dialogue (must be in this scene's characters and visible), or null when there is no dialogue" },
+            frame_prompt: { type: "string", description: "The FIRST frame of the clip = the moment just BEFORE the action (never the peak or result): who is where, poses, expressions, framing, camera angle, and continuity details from the previous scene. Vertical 9:16. No text in image. ENGLISH only (sent to the image model)." },
+            motion_prompt: { type: "string", description: "What moves during the clip: actions, expressions, camera movement. Physically simple and realistic. ENGLISH only (sent to the video model)." },
+            dialogue: { type: ["string", "null"], description: "Optional short spoken line (max 12 words) in the REQUESTED LANGUAGE, or null. ONE speaker only." },
+            speaker: { type: ["string", "null"], description: "Key of the character who says the dialogue (must be in this scene's characters and visible), or null when there is no dialogue. Check who is talking: a line that calls someone 'Dad/Mom' (Tati, Mama, Tato…) is said by the child, not by the parent." },
           },
           required: ["index", "beat", "characters", "frame_prompt", "motion_prompt", "dialogue", "speaker"],
         },
@@ -85,6 +87,8 @@ Production rules (AI video):
 - LANGUAGE OF FIELDS: write title, logline, setting, character role and visual, beat, frame_prompt and motion_prompt
   in ENGLISH (image and video models understand English best). Only hook_text, end_text and dialogue use the
   requested language. Character names follow the requested country.
+- SPEAKER CHECK: the speaker is the person who SAYS the words. Read each line as that character: a child says
+  "Dad/Mom" to a parent; a parent says the child's name. If the line does not fit the speaker, fix the speaker.
 - Character "role" must be neutral and family-friendly (e.g. "daughter", "stepmother", "nanny"), never words like
   neglected, abused, victim, starving. A child's "visual" describes a healthy, normally dressed child.
 - frame_prompt is the FIRST FRAME of the shot = the moment just BEFORE the action. The action itself happens in
@@ -132,6 +136,8 @@ Production rules (AI video):
 - LANGUAGE OF FIELDS: write title, logline, setting, character role and visual, beat, frame_prompt and motion_prompt
   in ENGLISH (image and video models understand English best). Only hook_text, end_text and dialogue use the
   requested language. Character names follow the requested country.
+- SPEAKER CHECK: the speaker is the person who SAYS the words. Read each line as that character: a child says
+  "Dad/Mom" to a parent; a parent says the child's name. If the line does not fit the speaker, fix the speaker.
 - Character "role" must be neutral and family-friendly (e.g. "daughter", "stepmother", "nanny"), never words like
   neglected, abused, victim, starving. A child's "visual" describes a healthy, normally dressed child.
 - frame_prompt is the FIRST FRAME of the shot = the moment just BEFORE the action. The action itself happens in
@@ -204,6 +210,10 @@ export async function writeStory(args: {
             `\n- Spoken lines must fit in ${shown}s: at most ${Math.max(4, Math.round(shown * 2.5))} words, or null.`
           : `\n- About ${settings.clipSeconds} seconds per scene.`) +
         `\n- Hook text, end card and all dialogue in ${settings.language}: natural spoken language a local would use, not a literal translation.` +
+        (/^english/i.test(settings.language.trim())
+          ? ""
+          : `\n- EVERYTHING ELSE IN ENGLISH: title, logline, setting, character role and visual, beat, frame_prompt and motion_prompt ` +
+            `must be written in English (they are sent to image and video models). Only hook_text, end_text and dialogue are in ${settings.language}.`) +
         (settings.country
           ? `\n- Audience: ${settings.country}. Adapt the story to it: first names common in ${settings.country}, homes, streets, cars, ` +
             `clothes and food typical there, people who look like the local population, and situations that feel natural in ${settings.country}.`
@@ -231,7 +241,8 @@ export async function writeStory(args: {
         JSON.stringify(STORY_TOOL.input_schema),
       parse: (d) => StorySchema.parse(d),
     });
-    return { story: normalize(data), cost };
+    const fixed = await ensureEnglish(normalize(data));
+    return { story: fixed.story, cost: cost + fixed.cost };
   }
 
   const client = new Anthropic({ apiKey: config.anthropicKey });
@@ -247,7 +258,109 @@ export async function writeStory(args: {
 
   const block = msg.content.find((b) => b.type === "tool_use");
   if (!block || block.type !== "tool_use") throw new Error("Claude did not return a story");
-  return { story: normalize(StorySchema.parse(block.input)), cost: 0 };
+  const fixed = await ensureEnglish(normalize(StorySchema.parse(block.input)));
+  return { story: fixed.story, cost: fixed.cost };
+}
+
+// ---------------------------------------------------------------- English check
+// Image and video models follow English far better, and Romanian/Polish words in a prompt
+// (e.g. "fiică mezină") often get blocked or misread. If the writer ignored the rule, translate.
+const EN_WORDS = new Set(
+  "the a an and of in on at to with her his their is are she he they from by for as into while who that this".split(" "),
+);
+// Very common short words of the languages we produce for (Romanian, Polish, French, German, Spanish, Italian,
+// Portuguese, Dutch, Czech, Hungarian, Turkish, Swedish…). Two or more, more than English ones → not English.
+const FOREIGN_WORDS = new Set(
+  ("și si în cu pe la de lui ei care este din spre într unei unui pentru când după fiică tată mamă copil " +
+   "w z na się do jest że nie przy jego jej oraz który która córka ojciec matka " +
+   "le les et des du une est dans sur avec qui elle il " +
+   "der die und das mit ist ein eine sie er auf im zu " +
+   "el los las y con en una del su ella que por " +
+   "il gli lo della con è nella sua " +
+   "os as com em uma ela " +
+   "het een en van met zijn " +
+   "je se na ve s že " +
+   "az és egy hogy " +
+   "bir ve ile bu " +
+   "och är med en ett hon han").split(/\s+/),
+);
+const DIACRITICS = /[ăâîșşțţąćęłńśźżčřšžůőűäöüßéèêàçñãõ]/i;
+
+export function looksEnglish(text: string | null | undefined, names: string[] = []): boolean {
+  let t = text || "";
+  for (const n of names) if (n) t = t.split(n).join(" ");
+  const words = t.toLowerCase().match(/[\p{L}']+/gu) || [];
+  const en = words.filter((w) => EN_WORDS.has(w)).length;
+  const foreign = words.filter((w) => FOREIGN_WORDS.has(w)).length;
+  if (foreign >= 2 && foreign > en) return false;
+  if (DIACRITICS.test(t) && en < 2) return false;
+  return true;
+}
+
+function productionFields(story: Story) {
+  return {
+    title: story.title,
+    logline: story.logline,
+    setting: story.setting,
+    characters: story.characters.map((c) => ({ key: c.key, role: c.role, visual: c.visual })),
+    scenes: story.scenes.map((s) => ({ index: s.index, beat: s.beat, frame_prompt: s.frame_prompt, motion_prompt: s.motion_prompt })),
+  };
+}
+
+export function needsEnglish(story: Story): boolean {
+  const f = productionFields(story);
+  const texts = [f.setting, ...f.characters.map((c) => `${c.role} ${c.visual}`), ...f.scenes.flatMap((s) => [s.frame_prompt, s.motion_prompt])];
+  const names = story.characters.map((c) => c.name);
+  const bad = texts.filter((t) => !looksEnglish(t, names)).length;
+  return bad > 0;
+}
+
+export async function ensureEnglish(story: Story): Promise<{ story: Story; cost: number }> {
+  if (!needsEnglish(story)) return { story, cost: 0 };
+  console.warn("Story production fields are not in English — translating them");
+  const prompt =
+    `Translate every string value of this JSON to natural ENGLISH, keeping the meaning, names, keys, structure and ` +
+    `all visual details exactly. Character names stay as they are. Answer with ONLY the JSON object.\n\n` +
+    JSON.stringify(productionFields(story), null, 2);
+  let out: any;
+  let cost = 0;
+  try {
+    if (config.anthropicKey) {
+      const client = new Anthropic({ apiKey: config.anthropicKey });
+      const msg = await client.messages.create({
+        model: config.claudeModel,
+        max_tokens: 6000,
+        system: "You are a precise translator for film production documents.",
+        messages: [{ role: "user", content: prompt }],
+      });
+      const text = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+      out = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    } else {
+      const r = await routerJson({ kind: "text", system: "You are a precise translator for film production documents.", prompt, parse: (d) => d });
+      out = r.data;
+      cost = r.cost;
+    }
+  } catch (e: any) {
+    console.warn("English translation failed, keeping the original:", e?.message);
+    return { story, cost };
+  }
+  const s = structuredClone(story);
+  if (typeof out?.title === "string") s.title = out.title;
+  if (typeof out?.logline === "string") s.logline = out.logline;
+  if (typeof out?.setting === "string") s.setting = out.setting;
+  for (const c of out?.characters || []) {
+    const t = s.characters.find((x) => x.key === c.key);
+    if (t && typeof c.role === "string") t.role = c.role;
+    if (t && typeof c.visual === "string") t.visual = c.visual;
+  }
+  for (const sc of out?.scenes || []) {
+    const t = s.scenes.find((x) => x.index === sc.index);
+    if (!t) continue;
+    if (typeof sc.beat === "string") t.beat = sc.beat;
+    if (typeof sc.frame_prompt === "string") t.frame_prompt = sc.frame_prompt;
+    if (typeof sc.motion_prompt === "string") t.motion_prompt = sc.motion_prompt;
+  }
+  return { story: s, cost };
 }
 
 function normalize(story: Story): Story {

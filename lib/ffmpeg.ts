@@ -191,3 +191,19 @@ async function renderAt(opts: RenderOpts, width: number, threads: number) {
   await run("ffmpeg", args);
   return probe(opts.output);
 }
+
+/**
+ * Fit a voice line to a clip: start it after a short pause and pad/trim it to exactly the clip length,
+ * so the lip-sync model gets audio and video of the same duration. Returns how long the speech itself is.
+ */
+export async function fitVoice(input: string, output: string, clipSeconds: number, leadSeconds = 0.3): Promise<number> {
+  const speech = (await probe(input)).duration;
+  const ms = Math.round(leadSeconds * 1000);
+  await run("ffmpeg", [
+    "-y", "-i", input,
+    "-af", `adelay=${ms}|${ms},apad`,
+    "-t", clipSeconds.toFixed(2),
+    "-ar", "44100", "-ac", "2", output,
+  ]);
+  return speech;
+}

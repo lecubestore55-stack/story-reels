@@ -265,6 +265,38 @@ export interface ProjectSettings {
   storyMode: StoryMode;    // original = new story with the same emotion; remake = same story, new look
   drama: DramaLevel;       // safe = no physical conflict; strong = slaps/pushes between adults, kids only implied in danger
   look: LookId;            // photographic style added to every image prompt
+  voice: VoiceMode;        // how dialogue is spoken: auto | native (video model speaks) | dub (TTS + lip sync)
+}
+
+/**
+ * Video models only speak English well (Kling 3 also Spanish/Chinese/Japanese/Korean). For any other
+ * language we "dub": the clip is made silent, an ElevenLabs voice says the line in the right language,
+ * and a lip-sync model moves the speaker's mouth to that audio.
+ */
+export type VoiceMode = "auto" | "native" | "dub";
+export const TTS_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3";
+export const TTS_PRICE_PER_CHAR = 0.0001; // $0.10 per 1000 characters
+export const LIPSYNC_ENDPOINT = "fal-ai/sync-lipsync";
+export const LIPSYNC_PRICE_PER_SECOND = 0.7 / 60;
+export const FEMALE_VOICES = ["Sarah", "Laura", "Jessica", "Charlotte", "Alice", "Matilda", "Aria"];
+export const MALE_VOICES = ["George", "Brian", "Daniel", "Eric", "Chris", "Roger", "Bill", "Liam", "Will", "Callum", "Charlie"];
+export const CHILD_VOICES = ["Lily", "River"];
+export const ALL_VOICES = [...FEMALE_VOICES, ...MALE_VOICES, ...CHILD_VOICES];
+
+const LANG_CODES: [RegExp, string][] = [
+  [/^english/i, "en"], [/^romanian/i, "ro"], [/^polish/i, "pl"], [/^french/i, "fr"], [/^german/i, "de"],
+  [/^italian/i, "it"], [/^spanish/i, "es"], [/^portuguese/i, "pt"], [/^dutch/i, "nl"], [/^czech/i, "cs"],
+  [/^hungarian/i, "hu"], [/^greek/i, "el"], [/^bulgarian/i, "bg"], [/^serbian/i, "sr"], [/^croatian/i, "hr"],
+  [/^turkish/i, "tr"], [/^ukrainian/i, "uk"], [/^swedish/i, "sv"], [/^arabic/i, "ar"], [/^russian/i, "ru"],
+];
+export function languageCode(language: string): string | undefined {
+  return LANG_CODES.find(([re]) => re.test(language.trim()))?.[1];
+}
+/** Should this project's dialogue be dubbed (TTS + lip sync) instead of spoken by the video model? */
+export function useDub(s: ProjectSettings): boolean {
+  if (s.voice === "dub") return true;
+  if (s.voice === "native") return false;
+  return !/^english/i.test(s.language.trim());
 }
 
 export type LookId = "tv-drama" | "natural" | "golden";
@@ -315,6 +347,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   storyMode: "original",
   drama: "safe",
   look: "tv-drama",
+  voice: "auto",
 };
 
 export function normalizeSettings(input: Partial<ProjectSettings> | null | undefined): ProjectSettings {
@@ -338,6 +371,7 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     storyMode: s.storyMode === "remake" ? "remake" : "original",
     drama: s.drama === "strong" ? "strong" : "safe",
     look: LOOKS[s.look as LookId] ? (s.look as LookId) : "tv-drama",
+    voice: s.voice === "native" || s.voice === "dub" ? s.voice : "auto",
   };
 }
 
@@ -345,7 +379,9 @@ export function estimateVideoCost(s: ProjectSettings, characterCount = 3): numbe
   const m = VIDEO_MODELS[s.videoModel];
   const clips = s.sceneCount * s.clipSeconds * m.pricePerSecond(s.audio);
   const images = (characterCount + s.sceneCount) * IMAGE_TIERS[s.imageTier].priceUsd;
-  return Math.round((clips + images) * 100) / 100;
+  // Dubbing: a short voice line + lip sync over each clip (roughly every scene has a line).
+  const dub = useDub(s) ? s.sceneCount * (s.clipSeconds * LIPSYNC_PRICE_PER_SECOND + 0.01) : 0;
+  return Math.round((clips + images + dub) * 100) / 100;
 }
 
 /**

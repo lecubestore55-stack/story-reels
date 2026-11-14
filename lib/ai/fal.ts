@@ -28,7 +28,11 @@ export async function uploadLocal(rel: string): Promise<string> {
 export async function submit(endpoint: string, input: Record<string, unknown>): Promise<string> {
   if (isMock()) {
     const id = `mock_${Math.random().toString(36).slice(2)}`;
-    const isVideo = /video|veo|kling/.test(endpoint);
+    const isVideo = /video|veo|kling|lipsync/.test(endpoint);
+    if (/elevenlabs|tts/.test(endpoint)) {
+      mockRequests.set(id, { audio: { url: `mock://audio/2` } });
+      return id;
+    }
     const secs = parseInt(String(input.duration ?? "5"), 10) || 5;
     const portrait = input.aspect_ratio === "3:4";
     mockRequests.set(id, isVideo

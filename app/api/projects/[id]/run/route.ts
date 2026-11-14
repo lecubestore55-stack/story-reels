@@ -5,7 +5,7 @@ import type { JobType } from "@/lib/types";
 
 export const runtime = "nodejs";
 
-const STEPS: JobType[] = ["write", "characters", "frames", "clips", "render"];
+const STEPS: JobType[] = ["write", "characters", "frames", "clips", "voice", "render"];
 
 /**
  * Run one pipeline step.
