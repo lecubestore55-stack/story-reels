@@ -80,6 +80,7 @@ export function mockStory(s: ProjectSettings): Story {
       frame_prompt: `Scene ${i + 1} start frame`,
       motion_prompt: `Scene ${i + 1} motion`,
       dialogue: i === 0 ? "Grandma? Why are you so cold?" : i === n - 1 ? "Daniel… don't open that door." : null,
+      speaker: i === 0 ? "grandson" : i === n - 1 ? "grandma" : null,
     })),
     originality: {
       kept_from_reference: ["surprise discovery", "role reversal ending"],

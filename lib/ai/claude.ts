@@ -33,7 +33,7 @@ const STORY_TOOL = {
       scenes: {
         type: "array",
         minItems: 1,
-        maxItems: 8,
+        maxItems: 12,
         items: {
           type: "object",
           properties: {
@@ -42,9 +42,10 @@ const STORY_TOOL = {
             characters: { type: "array", items: { type: "string" }, description: "keys of characters visible" },
             frame_prompt: { type: "string", description: "The still image this clip STARTS from: who is where, poses, expressions, framing, camera angle. Vertical 9:16. No text in image." },
             motion_prompt: { type: "string", description: "What moves during the clip: actions, expressions, camera movement. Physically simple and realistic." },
-            dialogue: { type: ["string", "null"], description: "Optional short spoken line (max 12 words) or null" },
+            dialogue: { type: ["string", "null"], description: "Optional short spoken line (max 12 words) or null. ONE speaker only." },
+            speaker: { type: ["string", "null"], description: "Key of the character who says the dialogue (must be in this scene's characters and visible), or null when there is no dialogue" },
           },
-          required: ["index", "beat", "characters", "frame_prompt", "motion_prompt", "dialogue"],
+          required: ["index", "beat", "characters", "frame_prompt", "motion_prompt", "dialogue", "speaker"],
         },
       },
       originality: {
@@ -81,6 +82,12 @@ Production rules (AI video):
 - Each scene is ONE continuous shot that starts from a still image (frame_prompt) and animates it (motion_prompt).
 - Keep actions simple and physically plausible: walking in, kneeling, turning, pointing, faces reacting. No fast action, no crowds, no text on screen.
 - Keep the same characters, outfits and setting across scenes so they look continuous.
+- Dialogue: at most ONE speaker per scene. Set "speaker" to that character's key, make sure they are in the scene's
+  characters, and in frame_prompt/motion_prompt keep the speaker's face visible and the camera on them while they talk
+  (the listener can be in the blurred foreground). Never give a line to one character while the shot is about another.
+- Frame every shot like a TV drama: emotional close-ups and medium close-ups of faces, over-the-shoulder shots with the
+  other person softly blurred in the foreground, reaction shots, and only a few wide shots to set the place.
+  Name the shot type at the start of each frame_prompt (e.g. "Close-up, over the husband's shoulder: …").
 - frame_prompt and motion_prompt go to image/video models with strict safety filters that block distressed children.
   In those two fields describe children as calm, serious, sad or worried — never crying, tears, trembling, scared,
   shouted at, on the floor eating scraps, or near anyone acting aggressively. Show conflict between adults with
@@ -108,6 +115,12 @@ Production rules (AI video):
 - Each scene is ONE continuous shot that starts from a still image (frame_prompt) and animates it (motion_prompt).
 - Map the reference beats onto the requested number of scenes in order. Keep actions simple and physically plausible.
 - Keep the same characters, outfits and setting across scenes so they look continuous.
+- Dialogue: at most ONE speaker per scene. Set "speaker" to that character's key, make sure they are in the scene's
+  characters, and in frame_prompt/motion_prompt keep the speaker's face visible and the camera on them while they talk
+  (the listener can be in the blurred foreground). Never give a line to one character while the shot is about another.
+- Frame every shot like a TV drama: emotional close-ups and medium close-ups of faces, over-the-shoulder shots with the
+  other person softly blurred in the foreground, reaction shots, and only a few wide shots to set the place.
+  Name the shot type at the start of each frame_prompt (e.g. "Close-up, over the husband's shoulder: …").
 - frame_prompt and motion_prompt go to image/video models with strict safety filters that block distressed children.
   In those two fields describe children as calm, serious, sad or worried — never crying, tears, trembling, scared,
   shouted at, on the floor eating scraps, or near anyone acting aggressively. Show conflict between adults with
@@ -150,7 +163,18 @@ export async function writeStory(args: {
       : `Reference breakdown (competitor video, for inspiration only):\n${JSON.stringify(analysis, null, 2)}`,
     remake && analysis.transcript?.trim() ? `Dialogue to keep (transcript of the reference):\n${analysis.transcript.trim()}` : "",
     args.notes?.trim() ? `Uploader notes about the reference:\n${args.notes.trim()}` : "",
-    `Requirements:\n- Exactly ${settings.sceneCount} scenes of about ${settings.clipSeconds} seconds each (index 0..${settings.sceneCount - 1}).\n- Hook text and any dialogue in ${settings.language}.\n- Total length about ${settings.sceneCount * settings.clipSeconds} seconds.`,
+    (() => {
+      const shown = settings.shotSeconds > 0 && settings.shotSeconds < settings.clipSeconds ? settings.shotSeconds : settings.clipSeconds;
+      const fast = shown < settings.clipSeconds;
+      return (
+        `Requirements:\n- Exactly ${settings.sceneCount} scenes (index 0..${settings.sceneCount - 1}).` +
+        (fast
+          ? `\n- FAST CUTS: each clip is generated at ${settings.clipSeconds}s but only its first ${shown}s are shown. Put the key action in the first ${shown} seconds of each shot, one simple action per shot, like a quickly edited TV drama (reaction shots, close-ups, wide shots).` +
+            `\n- Spoken lines must fit in ${shown}s: at most ${Math.max(4, Math.round(shown * 2.5))} words, or null.`
+          : `\n- About ${settings.clipSeconds} seconds per scene.`) +
+        `\n- Hook text and any dialogue in ${settings.language}.\n- Total reel length about ${Math.round(settings.sceneCount * shown)} seconds.`
+      );
+    })(),
     `Ending (very important): the reel is a TEASER for the full story on our website. The last scene must stop at the moment of highest tension, right BEFORE the answer or the payoff (a shocked face, a door about to open, a hidden object half-seen, a line cut off). Do not resolve the story in the video. The end_text card then invites viewers to read what happened next in the comments.`,
     settings.instructions.trim() ? `Page owner's direction:\n${settings.instructions.trim()}` : "",
     args.avoid.length && !remake ? `Stories already made from this reference — yours must be clearly different from all of them:\n- ${args.avoid.join("\n- ")}` : "",
@@ -195,6 +219,12 @@ function normalize(story: Story): Story {
   const keys = new Set(story.characters.map((c) => c.key));
   story.scenes = story.scenes
     .sort((a, b) => a.index - b.index)
-    .map((s, i) => ({ ...s, index: i, characters: s.characters.filter((k) => keys.has(k)), dialogue: s.dialogue ?? null }));
+    .map((s, i) => {
+      const characters = s.characters.filter((k) => keys.has(k));
+      const dialogue = s.dialogue?.trim() ? s.dialogue.trim() : null;
+      let speaker = dialogue && s.speaker && keys.has(s.speaker) ? s.speaker : null;
+      if (speaker && !characters.includes(speaker)) characters.push(speaker); // the speaker must be on screen
+      return { ...s, index: i, characters, dialogue, speaker };
+    });
   return story;
 }

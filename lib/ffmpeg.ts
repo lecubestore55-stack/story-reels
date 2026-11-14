@@ -67,6 +67,7 @@ type RenderOpts = {
   music?: string | null;    // absolute path
   workDir: string;          // absolute temp dir for text files
   subtitles?: (string | null)[]; // one line of dialogue per clip (null = none), shown while that clip plays
+  shotSeconds?: number;     // keep only the first N seconds of each clip (0/undefined = whole clip)
   endText?: string | null;  // curiosity card shown over the last seconds ("Full story in the comments 👇")
 };
 
@@ -91,9 +92,10 @@ async function renderAt(opts: RenderOpts, width: number, threads: number) {
   await mkdir(opts.workDir, { recursive: true });
   await mkdir(path.dirname(opts.output), { recursive: true });
 
-  const infos = await Promise.all(opts.clips.map(probe));
+  const cut = opts.shotSeconds && opts.shotSeconds > 0 ? opts.shotSeconds : 0;
+  const infos = (await Promise.all(opts.clips.map(probe))).map((i) => (cut ? { ...i, duration: Math.min(i.duration, cut) } : i));
   const args: string[] = ["-y", "-hide_banner", "-loglevel", "error", "-filter_complex_threads", "1"];
-  for (const c of opts.clips) args.push("-i", c);
+  for (const c of opts.clips) args.push(...(cut ? ["-t", String(cut)] : []), "-i", c);
   const musicIndex = opts.music ? opts.clips.length : -1;
   if (opts.music) args.push("-stream_loop", "-1", "-i", opts.music);
 

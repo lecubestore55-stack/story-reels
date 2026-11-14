@@ -1,13 +1,13 @@
 import path from "node:path";
 import { one, q } from "../lib/db";
-import { IMAGE_TIERS, VIDEO_MODELS } from "../lib/config";
+import { IMAGE_TIERS, LOOKS, VIDEO_MODELS } from "../lib/config";
 import { abs, downloadTo } from "../lib/storage";
 import { enqueue } from "../lib/jobs";
 import { analyzeReference } from "../lib/ai/gemini";
 import { writeStory } from "../lib/ai/claude";
 import { falError, firstImageUrl, run, submit, uploadLocal, videoUrl, waitFor } from "../lib/ai/fal";
 import { renderReel } from "../lib/ffmpeg";
-import type { Analysis, StoryCharacter, StoryScene } from "../lib/types";
+import type { Analysis, Story, StoryCharacter, StoryScene } from "../lib/types";
 import {
   RetryLater, addCost, removeFile, getAsset, getAssets, getProject, pool, requireStory, setProject, upsertAsset, type ProjectRow,
 } from "./shared";
@@ -69,9 +69,10 @@ export async function writeStep(projectId: string, payload: { feedback?: string 
 // ---------------------------------------------------------------- characters
 function characterPrompt(c: StoryCharacter) {
   return (
-    `Photorealistic character reference photo for a film. Full body, standing, facing the camera, calm expression, ` +
-    `plain light grey studio background, soft even lighting, sharp focus. ${c.visual}. ` +
-    `Ordinary real person, natural skin texture. No text, no logo, no watermark.`
+    `Photorealistic casting photo of an actor for a TV drama. Three-quarter body, standing, facing the camera, calm natural expression, ` +
+    `plain soft grey background, soft window light, 85mm lens, sharp focus on the face. ${c.visual}. ` +
+    `Ordinary real person, not a model: real skin texture with pores, natural hair, believable clothes. ` +
+    `Unedited photo, muted natural colors, no retouching, no plastic skin, no CGI look. No text, no logo, no watermark.`
   );
 }
 
@@ -147,7 +148,7 @@ function framePrompt(p: ProjectRow, scene: StoryScene, refs: StoryCharacter[]) {
   return (
     `Create a photorealistic vertical 9:16 cinematic film still. It is the first frame of a video shot.\n` +
     `Setting: ${story.setting}\nShot: ${scene.frame_prompt}${people}\n` +
-    `Natural light, realistic skin and fabric, believable home or street photography look, no text, no captions, no watermark.`
+    `${LOOKS[p.settings.look].prompt}\nNo text, no captions, no watermark, no split screen.`
   );
 }
 
@@ -223,8 +224,23 @@ export async function framesStep(projectId: string, payload: { only?: number; no
 }
 
 // ---------------------------------------------------------------- clips
-function motionPrompt(scene: StoryScene) {
-  const line = scene.dialogue ? ` Spoken line, said naturally: "${scene.dialogue}".` : "";
+function shortLook(visual: string) {
+  return visual.split(/[.;]/)[0].slice(0, 140);
+}
+
+export function motionPrompt(scene: StoryScene, story?: Story | null) {
+  let line = "";
+  if (scene.dialogue) {
+    const sp = story?.characters.find((c) => c.key === scene.speaker);
+    if (sp) {
+      const others = story!.characters.filter((c) => c.key !== sp.key && scene.characters.includes(c.key));
+      line =
+        ` DIALOGUE — only ${sp.name} (${shortLook(sp.visual)}) speaks, facing the camera with clear lip movement, saying: "${scene.dialogue}".` +
+        (others.length ? ` ${others.map((c) => c.name).join(" and ")} stay silent with mouths closed and only react.` : "");
+    } else {
+      line = ` One person speaks, saying: "${scene.dialogue}". Everyone else stays silent.`;
+    }
+  }
   return (
     `${scene.motion_prompt}${line} Realistic natural human motion and expressions, faces and clothing stay consistent ` +
     `with the first frame, vertical framing, cinematic but believable. No on-screen text or subtitles.`
@@ -253,7 +269,7 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
       requestId = asset.fal_request_id;
       endpoint = asset.fal_endpoint;
     } else {
-      const prompt = motionPrompt(scene);
+      const prompt = motionPrompt(scene, story);
       const imageUrl = await freshUrl(frames.get(ref)!.path!);
       const input = model.buildInput({ prompt, imageUrl, seconds, audio: p.settings.audio });
       try {
@@ -276,7 +292,7 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
         if (!isPolicyError(falError(e))) throw e;
         // Blocked by the video model's safety filter: one retry with calmer wording.
         console.warn(`Scene ${scene.index + 1} clip blocked by safety filter, retrying with calmer prompt`);
-        const prompt = soften(motionPrompt(scene));
+        const prompt = soften(motionPrompt(scene, story));
         const imageUrl = await freshUrl(frames.get(ref)!.path!);
         requestId = await submit(endpoint, model.buildInput({ prompt, imageUrl, seconds, audio: p.settings.audio }));
         await upsertAsset(projectId, "clip", ref, { status: "generating", prompt, fal_endpoint: endpoint, fal_request_id: requestId });
@@ -314,6 +330,7 @@ export async function renderStep(projectId: string) {
     output: abs(rel),
     hookText: p.settings.hookText ? story.hook_text : null,
     subtitles: p.settings.subtitles ? story.scenes.map((s) => s.dialogue ?? null) : undefined,
+    shotSeconds: p.settings.shotSeconds || undefined,
     endText: p.settings.endCard ? story.end_text || "What happened next? Full story in the comments 👇" : null,
     music: p.music_path ? abs(p.music_path) : null,
     workDir: abs(`projects/${projectId}/tmp`),

@@ -264,6 +264,15 @@ function FinalPanel({ data, busy, run, saveSettings, reload }: {
               onChange={async (e) => { await saveSettings({ endCard: e.target.checked }); run("render"); }} />
             End card: “{data.story?.end_text || "What happened next? Full story in the comments 👇"}”
           </label>
+          <div className="row small" style={{ margin: "8px 0" }}>
+            <span>Shot length:</span>
+            <select value={String(data.settings.shotSeconds)} disabled={busy} style={{ width: "auto" }}
+              onChange={async (e) => { await saveSettings({ shotSeconds: Number(e.target.value) }); run("render"); }}>
+              <option value="0">Whole clip ({data.settings.clipSeconds}s)</option>
+              {[1.5, 2, 2.5, 3, 4, 5].filter((v) => v < data.settings.clipSeconds).map((v) => <option key={v} value={v}>{v}s per shot</option>)}
+            </select>
+            <span className="muted">Shorter = faster cuts, re-render is free.</span>
+          </div>
           <p className="muted small">Changed the hook, end card or dialogue in the story? Save it, then press Re-render (free).</p>
           <div className="field" style={{ marginTop: 12 }}>
             <label>Background music (optional, use music you have the rights to)</label>
@@ -383,8 +392,16 @@ function StoryPanel({ data, busy, run, reload, setMsg }: {
                 <textarea rows={3} value={sc.frame_prompt} onChange={(e) => editScene(i, { frame_prompt: e.target.value })} />
                 <label>Motion (what moves, camera)</label>
                 <textarea rows={3} value={sc.motion_prompt} onChange={(e) => editScene(i, { motion_prompt: e.target.value })} />
-                <label>Spoken line (optional)</label>
-                <input type="text" value={sc.dialogue ?? ""} onChange={(e) => editScene(i, { dialogue: e.target.value || null })} />
+                <label>Spoken line (optional) and who says it</label>
+                <div className="row" style={{ flexWrap: "nowrap" }}>
+                  <select value={sc.speaker ?? ""} style={{ width: 150, flex: "none" }}
+                    onChange={(e) => editScene(i, { speaker: e.target.value || null, characters: e.target.value && !sc.characters.includes(e.target.value) ? [...sc.characters, e.target.value] : sc.characters })}>
+                    <option value="">— speaker —</option>
+                    {draft.characters.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
+                  </select>
+                  <input type="text" value={sc.dialogue ?? ""} onChange={(e) => editScene(i, { dialogue: e.target.value || null })} />
+                </div>
+                {sc.dialogue && !sc.speaker && <span className="small" style={{ color: "var(--warn)" }}>Choose who says this line, or the video may give it to the wrong person.</span>}
                 <div className="row small">
                   {draft.characters.map((c) => (
                     <label key={c.key} className="check" style={{ margin: 0 }}>

@@ -21,7 +21,7 @@ export const config = {
 };
 
 // ---------------------------------------------------------------- images
-export type ImageTierId = "seedream" | "standard" | "lite";
+export type ImageTierId = "flux2-pro" | "seedream" | "seedream-pro" | "standard" | "lite";
 export type Aspect = "9:16" | "3:4";
 
 export interface ImageTier {
@@ -39,12 +39,39 @@ const SEEDREAM_SIZE: Record<Aspect, { width: number; height: number }> = {
   "3:4": { width: 1920, height: 2560 },
 };
 
+// Seedream 5.0 Pro is billed $0.0675 up to 1536x1536 pixels of area, so stay just under it.
+const SEEDREAM_PRO_SIZE: Record<Aspect, { width: number; height: number }> = {
+  "9:16": { width: 1152, height: 2048 },
+  "3:4": { width: 1296, height: 1728 },
+};
+
+// FLUX.2 is billed per megapixel: ~1.3 MP keeps it cheap and still above Veo's 720p minimum.
+const FLUX_SIZE: Record<Aspect, { width: number; height: number }> = {
+  "9:16": { width: 864, height: 1536 },
+  "3:4": { width: 960, height: 1280 },
+};
+
 const nanoInput: ImageTier["buildInput"] = ({ prompt, aspect, imageUrls }) => ({
   prompt, aspect_ratio: aspect, num_images: 1, output_format: "png",
   ...(imageUrls?.length ? { image_urls: imageUrls } : {}),
 });
 
 export const IMAGE_TIERS: Record<ImageTierId, ImageTier> = {
+  "flux2-pro": {
+    id: "flux2-pro",
+    label: "FLUX.2 Pro — most realistic people (~$0.05/image)",
+    textToImage: process.env.FAL_FLUX2_T2I || "fal-ai/flux-2-pro",
+    edit: process.env.FAL_FLUX2_EDIT || "fal-ai/flux-2-pro/edit",
+    priceUsd: Number(process.env.FAL_FLUX2_PRICE_USD || 0.05),
+    buildInput: ({ prompt, aspect, imageUrls }) => ({
+      prompt,
+      image_size: FLUX_SIZE[aspect],
+      output_format: "png",
+      // 1 = strictest, 5 = most permissive: dramatic (non-graphic) scenes get blocked less often.
+      safety_tolerance: process.env.FAL_FLUX2_SAFETY || "5",
+      ...(imageUrls?.length ? { image_urls: imageUrls.slice(-8) } : {}),
+    }),
+  },
   seedream: {
     id: "seedream",
     label: "Seedream 5.0 Lite — cheapest, realistic ($0.035/image)",
@@ -53,6 +80,17 @@ export const IMAGE_TIERS: Record<ImageTierId, ImageTier> = {
     priceUsd: Number(process.env.FAL_SEEDREAM_PRICE_USD || 0.035),
     buildInput: ({ prompt, aspect, imageUrls }) => ({
       prompt, image_size: SEEDREAM_SIZE[aspect], num_images: 1, output_format: "png",
+      ...(imageUrls?.length ? { image_urls: imageUrls } : {}),
+    }),
+  },
+  "seedream-pro": {
+    id: "seedream-pro",
+    label: "Seedream 5.0 Pro — best realism (~$0.07/image)",
+    textToImage: process.env.FAL_SEEDREAM_PRO_T2I || "bytedance/seedream/v5/pro/text-to-image",
+    edit: process.env.FAL_SEEDREAM_PRO_EDIT || "bytedance/seedream/v5/pro/edit",
+    priceUsd: Number(process.env.FAL_SEEDREAM_PRO_PRICE_USD || 0.075),
+    buildInput: ({ prompt, aspect, imageUrls }) => ({
+      prompt, image_size: SEEDREAM_PRO_SIZE[aspect], num_images: 1, output_format: "png",
       ...(imageUrls?.length ? { image_urls: imageUrls } : {}),
     }),
   },
@@ -189,6 +227,7 @@ export interface ProjectSettings {
   videoModel: VideoModelId;
   imageTier: ImageTierId;
   sceneCount: number;      // number of clips
+  shotSeconds: number;     // 0 = use whole clip; otherwise keep only the first N seconds of each clip (fast cuts)
   clipSeconds: number;     // seconds per clip
   audio: boolean;          // model-generated sound (ambience, sfx, short lines)
   hookText: boolean;       // burn the hook text at the top of the reel
@@ -199,7 +238,35 @@ export interface ProjectSettings {
   instructions: string;    // extra direction for the writer (audience, country, tone…)
   storyMode: StoryMode;    // original = new story with the same emotion; remake = same story, new look
   drama: DramaLevel;       // safe = no physical conflict; strong = slaps/pushes between adults, kids only implied in danger
+  look: LookId;            // photographic style added to every image prompt
 }
+
+export type LookId = "tv-drama" | "natural" | "golden";
+
+/** Photography style added to every image prompt. This is what makes stills look like a real TV drama. */
+export const LOOKS: Record<LookId, { label: string; prompt: string }> = {
+  "tv-drama": {
+    label: "TV drama — cinematic, blurred background (recommended)",
+    prompt:
+      "Shot like a high-end American TV drama: cinema camera with an 85mm lens at f/1.8, shallow depth of field with a softly " +
+      "blurred background, soft natural daylight, gentle contrast, realistic color grade. Real skin texture with pores and fine " +
+      "lines, natural hair strands, detailed fabric. Expressive, believable acting. Sharp focus on the main face. " +
+      "Unedited look: muted natural color grading like Kodak Portra film, no beauty retouching, no plastic or waxy skin, " +
+      "no HDR, no over-sharpening, no glossy CGI look.",
+  },
+  natural: {
+    label: "Natural — realistic everyday look",
+    prompt:
+      "Realistic everyday photo look, 35mm lens, natural indoor or outdoor light, true-to-life colors, real skin texture, " +
+      "candid believable expressions, sharp focus on the faces. Unedited photo, no retouching, no plastic skin, no HDR, no CGI look.",
+  },
+  golden: {
+    label: "Golden hour — warm emotional light",
+    prompt:
+      "Cinematic golden-hour light, warm backlight and soft glow, 85mm lens, shallow depth of field, real skin texture, " +
+      "emotional film still with a gentle film grain. No retouching, no plastic skin, no CGI look.",
+  },
+};
 
 export type DramaLevel = "safe" | "strong";
 
@@ -207,8 +274,9 @@ export type StoryMode = "original" | "remake";
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   videoModel: "veo3.1-lite",
-  imageTier: "seedream",
+  imageTier: "flux2-pro",
   sceneCount: 3,
+  shotSeconds: 0,
   clipSeconds: 6,
   audio: true,
   hookText: true,
@@ -219,6 +287,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   instructions: "",
   storyMode: "original",
   drama: "safe",
+  look: "tv-drama",
 };
 
 export function normalizeSettings(input: Partial<ProjectSettings> | null | undefined): ProjectSettings {
@@ -228,7 +297,8 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     ...s,
     videoModel: model,
     imageTier: IMAGE_TIERS[s.imageTier] ? s.imageTier : DEFAULT_SETTINGS.imageTier,
-    sceneCount: clamp(Number(s.sceneCount) || 3, 1, 8),
+    sceneCount: clamp(Number(s.sceneCount) || 3, 1, 12),
+    shotSeconds: Math.max(0, Math.min(15, Math.round((Number(s.shotSeconds) || 0) * 2) / 2)),
     clipSeconds: VIDEO_MODELS[model].snapSeconds(Number(s.clipSeconds) || 6),
     audio: Boolean(s.audio) && VIDEO_MODELS[model].supportsAudio,
     hookText: Boolean(s.hookText),
@@ -239,6 +309,7 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     instructions: String(s.instructions || "").slice(0, 2000),
     storyMode: s.storyMode === "remake" ? "remake" : "original",
     drama: s.drama === "strong" ? "strong" : "safe",
+    look: LOOKS[s.look as LookId] ? (s.look as LookId) : "tv-drama",
   };
 }
 

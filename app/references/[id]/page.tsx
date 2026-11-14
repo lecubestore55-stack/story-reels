@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
-import { DEFAULT_SETTINGS, IMAGE_TIERS, VIDEO_MODELS, estimateVideoCost, normalizeSettings, type ProjectSettings } from "@/lib/config";
+import { DEFAULT_SETTINGS, IMAGE_TIERS, LOOKS, VIDEO_MODELS, estimateVideoCost, normalizeSettings, type ProjectSettings } from "@/lib/config";
 import type { Analysis } from "@/lib/types";
 import { Badge, api, money, postJson, usePolling } from "../../ui";
 
@@ -159,12 +159,25 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
                 </select>
               </div>
               <div className="field">
+                <label>Image look</label>
+                <select value={s.look} onChange={(e) => set({ look: e.target.value as any })}>
+                  {Object.entries(LOOKS).map(([id, l]) => <option key={id} value={id}>{l.label}</option>)}
+                </select>
+              </div>
+              <div className="field">
                 <label>Scenes (clips)</label>
-                <input type="number" min={1} max={8} value={settings.sceneCount} onChange={(e) => set({ sceneCount: Number(e.target.value) })} />
+                <input type="number" min={1} max={12} value={settings.sceneCount} onChange={(e) => set({ sceneCount: Number(e.target.value) })} />
               </div>
               <div className="field">
                 <label>Seconds per clip ({model.minSeconds}–{model.maxSeconds})</label>
                 <input type="number" min={model.minSeconds} max={model.maxSeconds} value={settings.clipSeconds} onChange={(e) => set({ clipSeconds: Number(e.target.value) })} />
+              </div>
+              <div className="field">
+                <label>Shot length in final video (fast cuts)</label>
+                <select value={String(s.shotSeconds)} onChange={(e) => set({ shotSeconds: Number(e.target.value) })}>
+                  <option value="0">Whole clip ({s.clipSeconds}s)</option>
+                  {[1.5, 2, 2.5, 3].filter((v) => v < s.clipSeconds).map((v) => <option key={v} value={v}>{v}s per shot (trim)</option>)}
+                </select>
               </div>
               <div className="field">
                 <label>Language of hook text / dialogue</label>
@@ -194,7 +207,7 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
                 {busy ? "Creating…" : s.storyMode === "remake" ? `Make ${count} remake${count === 1 ? "" : "s"}` : `Write ${count} new stor${count === 1 ? "y" : "ies"}`}
               </button>
               <span className="muted small">
-                Writing is nearly free. Video for one reel: about {money(estimateVideoCost(s))} ({s.sceneCount} × {s.clipSeconds}s), charged only when you generate.
+                Writing is nearly free. Video for one reel: about {money(estimateVideoCost(s))} ({s.sceneCount} clips × {s.clipSeconds}s generated{s.shotSeconds > 0 && s.shotSeconds < s.clipSeconds ? `, ${s.shotSeconds}s shown each → ${Math.round(s.sceneCount * s.shotSeconds)}s reel` : ""}), charged only when you generate.
               </span>
             </div>
           </div>
