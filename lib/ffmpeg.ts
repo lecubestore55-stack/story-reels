@@ -209,3 +209,36 @@ export async function fitVoice(input: string, output: string, clipSeconds: numbe
   ]);
   return speech;
 }
+
+/** Copy the audio of a video to a WAV file (returns false when the video has no sound). */
+export async function extractAudio(video: string, output: string): Promise<boolean> {
+  if (!(await probe(video)).hasAudio) return false;
+  await mkdir(path.dirname(output), { recursive: true });
+  await run("ffmpeg", ["-y", "-i", video, "-vn", "-ar", "44100", "-ac", "2", output]);
+  return true;
+}
+
+/** Mix several audio files into one (same length as the first). */
+export async function mixAudio(inputs: string[], output: string, volumes: number[] = []): Promise<void> {
+  await mkdir(path.dirname(output), { recursive: true });
+  const args = ["-y"];
+  for (const i of inputs) args.push("-i", i);
+  const parts = inputs.map((_, i) => `[${i}:a]aresample=44100,volume=${volumes[i] ?? 1}[a${i}]`).join(";");
+  const labels = inputs.map((_, i) => `[a${i}]`).join("");
+  args.push("-filter_complex", `${parts};${labels}amix=inputs=${inputs.length}:duration=first:normalize=0[out]`, "-map", "[out]", "-ar", "44100", "-ac", "2", output);
+  await run("ffmpeg", args);
+}
+
+/** Put a new soundtrack (one or more audio files mixed together) on a video without re-encoding the picture. */
+export async function replaceAudio(video: string, audios: { file: string; volume?: number }[], output: string): Promise<void> {
+  await mkdir(path.dirname(output), { recursive: true });
+  const args = ["-y", "-i", video];
+  for (const a of audios) args.push("-i", a.file);
+  const parts = audios.map((a, i) => `[${i + 1}:a]aresample=44100,volume=${a.volume ?? 1}[a${i}]`).join(";");
+  const labels = audios.map((_, i) => `[a${i}]`).join("");
+  args.push(
+    "-filter_complex", `${parts};${labels}amix=inputs=${audios.length}:duration=longest:normalize=0,apad[out]`,
+    "-map", "0:v", "-map", "[out]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", output,
+  );
+  await run("ffmpeg", args);
+}

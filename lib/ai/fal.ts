@@ -29,6 +29,10 @@ export async function submit(endpoint: string, input: Record<string, unknown>): 
   if (isMock()) {
     const id = `mock_${Math.random().toString(36).slice(2)}`;
     const isVideo = /video|veo|kling|lipsync/.test(endpoint);
+    if (/demucs/.test(endpoint)) {
+      mockRequests.set(id, { vocals: { url: "mock://audio/6" }, drums: { url: "mock://audio/6" }, other: { url: "mock://audio/6" } });
+      return id;
+    }
     if (/elevenlabs|tts/.test(endpoint)) {
       mockRequests.set(id, { audio: { url: `mock://audio/2` } });
       return id;

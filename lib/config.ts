@@ -278,10 +278,16 @@ export type ReelKind = "story" | "recipe";
 export type VoiceMode = "auto" | "native" | "dub";
 export const TTS_ENDPOINT = "fal-ai/elevenlabs/tts/eleven-v3";
 export const TTS_PRICE_PER_CHAR = 0.0001; // $0.10 per 1000 characters
-export const LIPSYNC_ENDPOINT = "fal-ai/sync-lipsync";
-export const LIPSYNC_PRICE_PER_SECOND = 0.7 / 60;
+// sync lipsync-2: much better mouths than 1.9 (teeth, natural shapes). 1.9 stays as a cheap fallback.
+export const LIPSYNC_ENDPOINT = "fal-ai/sync-lipsync/v2";
+export const LIPSYNC_MODEL = "lipsync-2";
+export const LIPSYNC_PRICE_PER_SECOND = 3 / 60;
+export const LIPSYNC_FALLBACK = "fal-ai/sync-lipsync";
+// Demucs splits the video model's soundtrack: we drop its (English) voice and keep slaps, steps, doors, ambience.
+export const STEMS_ENDPOINT = "fal-ai/demucs";
+export const STEMS_PRICE_PER_SECOND = 0.0007;
 export const FEMALE_VOICES = ["Sarah", "Laura", "Jessica", "Charlotte", "Alice", "Matilda", "Aria"];
-export const MALE_VOICES = ["George", "Brian", "Daniel", "Eric", "Chris", "Roger", "Bill", "Liam", "Will", "Callum", "Charlie"];
+export const MALE_VOICES = ["George", "Brian", "Daniel", "Eric", "Chris", "Roger", "Bill", "Callum", "Liam", "Will", "Charlie"];
 export const CHILD_VOICES = ["Lily", "River"];
 export const ALL_VOICES = [...FEMALE_VOICES, ...MALE_VOICES, ...CHILD_VOICES];
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
-import { ALL_VOICES, IMAGE_TIERS, VIDEO_MODELS, useDub, type ProjectSettings } from "@/lib/config";
-import { childPitch, voiceMap } from "@/lib/voices";
+import { ALL_VOICES, IMAGE_TIERS, LIPSYNC_PRICE_PER_SECOND, VIDEO_MODELS, useDub, type ProjectSettings } from "@/lib/config";
+import { voiceMap, voiceNote } from "@/lib/voices";
 import type { Story, StoryScene } from "@/lib/types";
 import { Badge, api, money, postJson, usePolling } from "../../ui";
 
@@ -229,8 +229,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
           </div>
           {dubbing && (
             <p className="muted small">
-              Dialogue scenes are made silent, then an ElevenLabs voice says the line in {s.language} and a lip-sync model moves
-              the speaker&apos;s mouth (~$0.08 extra per line). Pick each character&apos;s voice in the story editor.
+              The video model makes the scene with its sound effects; its voices are removed, an ElevenLabs voice says the line in {s.language} and lip-sync 2 moves the speaker&apos;s mouth (~{money(s.clipSeconds * LIPSYNC_PRICE_PER_SECOND + 0.01)} extra per line). Use 5 seconds or more for scenes with a line. Pick each character&apos;s voice in the story editor.
             </p>
           )}
           {reached.clips && !data.final_url && (
@@ -252,7 +251,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                     if (confirm(`Regenerate clip ${sc.index + 1}? About ${money(clipCost)}.`)) run("clips", { only: sc.index });
                   }}>Regenerate clip</button>
                   {dubbing && sc.dialogue && a?.status === "ready" && (
-                    <button disabled={busy} onClick={() => run("voice", { only: sc.index })}>Redo voice (~$0.08)</button>
+                    <button disabled={busy} onClick={() => run("voice", { only: sc.index })}>Redo voice (~{money(s.clipSeconds * LIPSYNC_PRICE_PER_SECOND + 0.01)})</button>
                   )}
                 </div>
               );
@@ -411,7 +410,7 @@ function StoryPanel({ data, busy, run, reload, setMsg }: {
                 <textarea rows={3} value={c.visual} onChange={(e) => editChar(i, { visual: e.target.value })} />
                 <label>Voice (when dubbed)</label>
                 <select value={c.voice ?? ""} onChange={(e) => editChar(i, { voice: e.target.value })}>
-                  <option value="">Auto ({voiceMap({ characters: draft.characters.map((x) => (x.key === c.key ? { ...x, voice: null } : x)) }).get(c.key)}{childPitch(c) > 1 ? " → child voice" : ""})</option>
+                  <option value="">Auto ({voiceMap({ characters: draft.characters.map((x) => (x.key === c.key ? { ...x, voice: null } : x)) }).get(c.key)}{voiceNote(c)})</option>
                   {ALL_VOICES.map((v) => <option key={v} value={v}>{v}</option>)}
                 </select>
               </div>

@@ -1,15 +1,16 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { one, q } from "../lib/db";
 import {
   IMAGE_TIERS, LIPSYNC_ENDPOINT, LIPSYNC_PRICE_PER_SECOND, LOOKS,
-  TTS_ENDPOINT, TTS_PRICE_PER_CHAR, VIDEO_MODELS, languageCode, useDub, type ProjectSettings,
+  TTS_ENDPOINT, TTS_PRICE_PER_CHAR, LIPSYNC_FALLBACK, LIPSYNC_MODEL, STEMS_ENDPOINT, STEMS_PRICE_PER_SECOND, VIDEO_MODELS, languageCode, useDub, type ProjectSettings,
 } from "../lib/config";
 import { abs, downloadTo } from "../lib/storage";
 import { enqueue } from "../lib/jobs";
 import { analyzeReference } from "../lib/ai/gemini";
 import { ensureEnglish, needsEnglish, softenLine, writeStory } from "../lib/ai/claude";
 import { falError, firstImageUrl, run, submit, uploadLocal, videoUrl, waitFor } from "../lib/ai/fal";
-import { fitVoice, probe, renderReel } from "../lib/ffmpeg";
+import { extractAudio, fitVoice, mixAudio, probe, renderReel, replaceAudio } from "../lib/ffmpeg";
 import { detectShots } from "../lib/shots";
 import { childPitch, voiceMap } from "../lib/voices";
 import type { Analysis, Story, StoryCharacter, StoryScene } from "../lib/types";
@@ -339,7 +340,9 @@ async function saveDialogue(projectId: string, index: number, dialogue: string) 
   await setProject(projectId, { story });
 }
 
-async function dubClip(projectId: string, settings: ProjectSettings, story: Story, scene: StoryScene, clipRel: string): Promise<string> {
+async function dubClip(
+  projectId: string, settings: ProjectSettings, story: Story, scene: StoryScene, clipRel: string, effects: string | null,
+): Promise<string> {
   const voice = voiceMap(story).get(scene.speaker || "") || "Sarah";
   let text = scene.dialogue!.trim();
   const code = languageCode(settings.language);
@@ -393,18 +396,72 @@ async function dubClip(projectId: string, settings: ProjectSettings, story: Stor
   const speech = await fitVoice(abs(`${base}.mp3`), abs(`${base}.wav`), clipSeconds, 0.3, pitch);
   if (speech + 0.3 > clipSeconds) console.warn(`Scene ${scene.index + 1}: the line is longer than the clip and will be cut`);
 
-  const out = await run(LIPSYNC_ENDPOINT, {
-    video_url: await freshUrl(clipRel),
-    audio_url: await freshUrl(`${base}.wav`),
-    model: "lipsync-1.9.0-beta",
-    sync_mode: "cut_off",
-  });
-  await addCost(projectId, clipSeconds * LIPSYNC_PRICE_PER_SECOND);
+  let out: any;
+  try {
+    out = await run(LIPSYNC_ENDPOINT, {
+      video_url: await freshUrl(clipRel),
+      audio_url: await freshUrl(`${base}.wav`),
+      model: LIPSYNC_MODEL,
+      sync_mode: "cut_off",
+    });
+    await addCost(projectId, clipSeconds * LIPSYNC_PRICE_PER_SECOND);
+  } catch (e) {
+    if (isPolicyError(falError(e))) throw e;
+    console.warn(`Scene ${scene.index + 1}: lipsync-2 failed (${falError(e).slice(0, 120)}), using lipsync 1.9`);
+    out = await run(LIPSYNC_FALLBACK, {
+      video_url: await freshUrl(clipRel),
+      audio_url: await freshUrl(`${base}.wav`),
+      model: "lipsync-1.9.0-beta",
+      sync_mode: "cut_off",
+    });
+    await addCost(projectId, (clipSeconds * 0.7) / 60);
+  }
+  const synced = `${base}_sync.mp4`;
+  await downloadTo(videoUrl(out), synced);
+  // Final soundtrack = the new voice + the model's sound effects (its own voice removed).
   const rel = `projects/${projectId}/clips/scene${scene.index}_dub_${stamp()}.mp4`;
-  await downloadTo(videoUrl(out), rel);
-  await removeFile(`${base}.mp3`);
-  await removeFile(`${base}.wav`);
+  const fx = effects ? abs(effects) : null;
+  await replaceAudio(abs(synced), [{ file: abs(`${base}.wav`), volume: 1 }, ...(fx ? [{ file: fx, volume: 0.9 }] : [])], abs(rel));
+  for (const f of [`${base}.mp3`, `${base}.wav`, synced]) await removeFile(f);
   return rel;
+}
+
+/**
+ * The video model's soundtrack without voices: slaps, steps, glass, doors, room tone. Saved next to the clip so
+ * "Redo voice" can reuse it. Returns null when the clip has no sound or the split fails (then only the voice is used).
+ */
+async function effectsTrack(projectId: string, scene: StoryScene, clipRel: string): Promise<string | null> {
+  const dir = `projects/${projectId}/voice`;
+  const fxRel = `${dir}/scene${scene.index}_fx_${stamp()}.wav`;
+  const src = `${dir}/scene${scene.index}_src_${stamp()}.wav`;
+  try {
+    if (!(await extractAudio(abs(clipRel), abs(src)))) return null;
+    const seconds = (await probe(abs(src))).duration || 6;
+    const out = await run(STEMS_ENDPOINT, {
+      audio_url: await freshUrl(src),
+      model: "htdemucs",
+      stems: ["vocals", "drums", "bass", "other"],
+      output_format: "wav",
+    });
+    await addCost(projectId, seconds * STEMS_PRICE_PER_SECOND);
+    const parts: string[] = [];
+    for (const k of ["drums", "bass", "other"]) {
+      const u = out?.[k]?.url;
+      if (!u) continue;
+      const r = `${dir}/scene${scene.index}_${k}_${stamp()}.wav`;
+      await downloadTo(u, r);
+      parts.push(r);
+    }
+    if (!parts.length) return null;
+    await mixAudio(parts.map(abs), abs(fxRel));
+    for (const f of parts) await removeFile(f);
+    return fxRel;
+  } catch (e) {
+    console.warn(`Scene ${scene.index + 1}: could not separate sound effects (${falError(e).slice(0, 150)}) — voice only`);
+    return null;
+  } finally {
+    await removeFile(src);
+  }
 }
 
 export async function clipsStep(projectId: string, payload: { only?: number }) {
@@ -427,11 +484,11 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
     let endpoint = model.endpoint;
     let requestId: string;
     const dubThis = dub && Boolean(scene.dialogue);
-    // In dub mode EVERY clip is silent: video models invent English talking when they make sound,
-    // even in scenes without a line. The real voice is added by TTS + lip sync; add music on the final step.
-    const audio = dub ? false : p.settings.audio;
+    // Dub mode keeps the model's sound: we let the speaker really talk (natural lips, gestures, slaps, steps),
+    // then remove only the voices from the soundtrack and put the ElevenLabs voice + lip sync on top.
+    const audio = p.settings.audio;
     const mp = (soft = false) => {
-      const t = motionPrompt(scene, story, { language: p.settings.language, dub });
+      const t = motionPrompt(scene, story, { language: p.settings.language });
       return soft ? soften(t) : t;
     };
     // Resume a request that was already paid for if the worker restarted mid-generation.
@@ -472,19 +529,30 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
       const url = videoUrl(out);
       const rel = `projects/${projectId}/clips/scene${scene.index}_${stamp()}.mp4`;
       await downloadTo(url, rel);
-      if (!dubThis) {
+      if (!dub) {
         await upsertAsset(projectId, "clip", ref, { status: "ready", path: rel, remote_url: url, fal_request_id: null });
         return;
       }
-      // Add the voice in the story language + lip sync. If that fails, keep the silent clip and say why.
       await upsertAsset(projectId, "clip", ref, { status: "generating", path: rel, remote_url: url, fal_request_id: null, error: "Adding the voice…" });
+      const effects = audio ? await effectsTrack(projectId, scene, rel) : null;
+      if (!dubThis) {
+        // No line here: keep the effects, drop any words the model invented.
+        let final = rel;
+        if (effects) {
+          final = `projects/${projectId}/clips/scene${scene.index}_fx_${stamp()}.mp4`;
+          await replaceAudio(abs(rel), [{ file: abs(effects) }], abs(final));
+        }
+        await upsertAsset(projectId, "clip", ref, { status: "ready", path: final, remote_url: null, error: null });
+        return;
+      }
+      // Add the voice in the story language + lip sync. If that fails, keep the clip and say why.
       try {
-        const dubbed = await dubClip(projectId, p.settings, story, scene, rel);
+        const dubbed = await dubClip(projectId, p.settings, story, scene, rel, effects);
         await upsertAsset(projectId, "clip", ref, { status: "ready", path: dubbed, remote_url: null, error: null });
       } catch (e) {
         await upsertAsset(projectId, "clip", ref, {
           status: "ready", path: rel, remote_url: url,
-          error: `Voice not added (${falError(e).slice(0, 200)}). The clip is silent — press "Redo voice".`,
+          error: `Voice not added (${falError(e).slice(0, 200)}). Press "Redo voice".`,
         });
       }
     } catch (e) {
@@ -497,6 +565,16 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
 
   // Rendering is free and fast, so always rebuild the reel after new clips.
   await enqueue("render", { projectId });
+}
+
+async function latestEffects(projectId: string, index: number): Promise<string | null> {
+  const dir = `projects/${projectId}/voice`;
+  try {
+    const files = (await fs.readdir(abs(dir))).filter((f) => f.startsWith(`scene${index}_fx_`)).sort();
+    return files.length ? `${dir}/${files[files.length - 1]}` : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------- voice (redo dubbing only)
@@ -513,7 +591,7 @@ export async function voiceStep(projectId: string, payload: { only?: number }) {
   const errors = await pool(scenes, 3, async (scene) => {
     const ref = String(scene.index);
     try {
-      const dubbed = await dubClip(projectId, p.settings, story, scene, clips.get(ref)!.path!);
+      const dubbed = await dubClip(projectId, p.settings, story, scene, clips.get(ref)!.path!, await latestEffects(projectId, scene.index));
       await upsertAsset(projectId, "clip", ref, { status: "ready", path: dubbed, remote_url: null, error: null });
     } catch (e) {
       const msg = `Scene ${scene.index + 1} voice: ${falError(e).slice(0, 300)}`;
