@@ -69,6 +69,7 @@ type RenderOpts = {
   subtitles?: (string | null)[]; // one line of dialogue per clip (null = none), shown while that clip plays
   shotSeconds?: number;     // keep only the first N seconds of each clip (0/undefined = whole clip)
   endText?: string | null;  // curiosity card shown over the last seconds ("Full story in the comments 👇")
+  voiceover?: string | null; // absolute path: narration over the whole reel (scene sound is lowered under it)
 };
 
 /**
@@ -98,6 +99,8 @@ async function renderAt(opts: RenderOpts, width: number, threads: number) {
   for (const c of opts.clips) args.push(...(cut ? ["-t", String(cut)] : []), "-i", c);
   const musicIndex = opts.music ? opts.clips.length : -1;
   if (opts.music) args.push("-stream_loop", "-1", "-i", opts.music);
+  const voIndex = opts.voiceover ? opts.clips.length + (opts.music ? 1 : 0) : -1;
+  if (opts.voiceover) args.push("-i", opts.voiceover);
 
   const f: string[] = [];
   const concatInputs: string[] = [];
@@ -178,6 +181,13 @@ async function renderAt(opts: RenderOpts, width: number, threads: number) {
     f.push(`[${musicIndex}:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=0.25[mu]`);
     f.push(`[ac][mu]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[am]`);
     aLabel = "am";
+  }
+  if (voIndex >= 0) {
+    // Narration starts after 0.3 s; the scene sound (sizzle, crunch, music) is lowered so the voice is clear.
+    f.push(`[${aLabel}]volume=0.55[bg]`);
+    f.push(`[${voIndex}:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,adelay=300|300,volume=1.1[vo]`);
+    f.push(`[bg][vo]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[avo]`);
+    aLabel = "avo";
   }
 
   args.push(

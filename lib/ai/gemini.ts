@@ -83,7 +83,9 @@ const RECIPE_HINT = `IMPORTANT: this is a RECIPE / FOOD reel, not a story. Analy
 - hook: what makes people stop scrolling in the first 2 seconds (texture, cheese pull, crunch, close-up).
 - twist: the final money shot.
 - characters: only hands / cook (no faces) and the dish itself with its exact look (layers, toppings, colors, dish/pan).
-- setting: kitchen, counter, light, props. audio: music / ASMR sounds (knife, crunch), any voice.
+- setting: kitchen, counter, light, props. audio: music / ASMR sounds (sizzle, knife, crunch, oven) and whether a narrator talks.
+- beats: one beat per shot/cut, in order, with the exact action (this is used to remake the reel shot by shot).
+- transcript: the exact words of any voice-over or speech (empty string if none).
 Uploader notes may contain the recipe name or blog link.`;
 
 export async function analyzeReference(relPath: string, absPath: string, notes: string | null, mimeType: string, kind: "story" | "recipe" = "story") {

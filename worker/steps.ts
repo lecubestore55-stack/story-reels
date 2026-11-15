@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { one, q } from "../lib/db";
@@ -477,6 +478,8 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
   const seconds = model.snapSeconds(p.settings.clipSeconds);
   // Dub only stories that actually have lines; recipe reels keep the model's natural kitchen sounds.
   const dub = useDub(p.settings) && story.scenes.some((sc) => sc.dialogue);
+  // Recipe reels keep the cooking sounds but lose any voice the video model invents (the voice-over is added at render).
+  const recipe = p.settings.kind === "recipe";
 
   const errors = await pool(scenes, 4, async (scene) => {
     const ref = String(scene.index);
@@ -529,7 +532,7 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
       const url = videoUrl(out);
       const rel = `projects/${projectId}/clips/scene${scene.index}_${stamp()}.mp4`;
       await downloadTo(url, rel);
-      if (!dub) {
+      if (!dub && !(recipe && audio)) {
         await upsertAsset(projectId, "clip", ref, { status: "ready", path: rel, remote_url: url, fal_request_id: null });
         return;
       }
@@ -604,6 +607,39 @@ export async function voiceStep(projectId: string, payload: { only?: number }) {
 }
 
 // ---------------------------------------------------------------- render
+/** Narration for recipe reels: one ElevenLabs file for the whole reel, reused while the text and voice stay the same. */
+async function voiceoverFile(projectId: string, p: ProjectRow, story: Story): Promise<string | null> {
+  const text = story.voiceover?.trim();
+  if (!text) return null;
+  const voice = p.settings.narrator || "Jessica";
+  const key = createHash("sha1").update(`${voice}|${p.settings.language}|${text}`).digest("hex").slice(0, 12);
+  const rel = `projects/${projectId}/voice/voiceover_${key}.mp3`;
+  try {
+    await fs.access(abs(rel));
+    return rel;
+  } catch {}
+  const code = languageCode(p.settings.language);
+  const engines = [
+    { endpoint: TTS_ENDPOINT, input: (t: string) => ({ text: t, voice, language_code: code, stability: 0.5 }) },
+    { endpoint: "fal-ai/elevenlabs/tts/turbo-v2.5", input: (t: string) => ({ text: t, voice, language_code: code, stability: 0.5 }) },
+    { endpoint: "fal-ai/elevenlabs/tts/multilingual-v2", input: (t: string) => ({ text: t, voice, stability: 0.5 }) },
+  ];
+  let last: unknown;
+  for (const e of engines) {
+    try {
+      const out = await run(e.endpoint, e.input(text));
+      await addCost(projectId, Math.max(text.length, 50) * TTS_PRICE_PER_CHAR);
+      if (!out?.audio?.url) throw new Error("the voice model returned no audio");
+      await downloadTo(out.audio.url, rel);
+      return rel;
+    } catch (err) {
+      last = err;
+      if (!isPolicyError(falError(err))) break;
+    }
+  }
+  throw new Error(`Voice-over failed: ${falError(last).slice(0, 200)}. Edit the voice-over text in the story and render again.`);
+}
+
 export async function renderStep(projectId: string) {
   const p = await getProject(projectId);
   const story = requireStory(p);
@@ -612,8 +648,10 @@ export async function renderStep(projectId: string) {
   if (missing.length) throw new Error(`Some clips are not ready (scenes: ${missing.map((s) => s.index + 1).join(", ")})`);
 
   await setProject(projectId, { status: "rendering", error: null });
+  const vo = await voiceoverFile(projectId, p, story);
   const rel = `projects/${projectId}/final_${stamp()}.mp4`;
   await renderReel({
+    voiceover: vo ? abs(vo) : null,
     clips: story.scenes.map((s) => abs(clips.get(String(s.index))!.path!)),
     output: abs(rel),
     hookText: p.settings.hookText ? story.hook_text : null,

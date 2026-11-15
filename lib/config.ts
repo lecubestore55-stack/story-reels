@@ -266,6 +266,7 @@ export interface ProjectSettings {
   storyMode: StoryMode;    // original = new story with the same emotion; remake = same story, new look
   drama: DramaLevel;       // safe = no physical conflict; strong = slaps/pushes between adults, kids only implied in danger
   look: LookId;            // photographic style added to every image prompt
+  narrator: string;        // ElevenLabs voice for the recipe voice-over ("" = Jessica)
   voice: VoiceMode;        // how dialogue is spoken: auto | native (video model speaks) | dub (TTS + lip sync)
 }
 
@@ -357,6 +358,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   drama: "safe",
   look: "tv-drama",
   voice: "auto",
+  narrator: "",
 };
 
 export function normalizeSettings(input: Partial<ProjectSettings> | null | undefined): ProjectSettings {
@@ -382,6 +384,7 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     drama: s.drama === "strong" ? "strong" : "safe",
     look: LOOKS[s.look as LookId] ? (s.look as LookId) : "tv-drama",
     voice: s.voice === "native" || s.voice === "dub" ? s.voice : "auto",
+    narrator: typeof s.narrator === "string" && ALL_VOICES.includes(s.narrator) ? s.narrator : "",
   };
 }
 

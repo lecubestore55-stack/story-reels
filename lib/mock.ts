@@ -98,6 +98,7 @@ export function mockRecipe(s: ProjectSettings): Story {
     logline: "A spatula lifts a tall slice of Oreo cream cake to show every layer.",
     hook_text: "The dessert everyone asks me for 😍",
     end_text: "Full recipe in the comments 👇",
+    voiceover: s.storyMode === "remake" ? "Taco cones filled with beef and melted cheese. Try them tonight!" : null,
     setting: "Bright home kitchen, white quartz counter, soft window light, blurred wooden cabinets, a cook's hands with light skin and a beige sleeve",
     characters: [
       { key: "dish", name: "Oreo cream poke cake", role: "dish", visual: "glass 9x13 baking dish, dark chocolate cake base, thick white cookies-and-cream mousse layer, crushed Oreo topping" },

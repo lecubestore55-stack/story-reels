@@ -134,6 +134,21 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
             </p>
             {recipe && (
               <div className="field" style={{ marginTop: 12 }}>
+                <label>Mode</label>
+                <select value={s.storyMode} onChange={(e) => set({ storyMode: e.target.value as any })}>
+                  <option value="original">New reel: my own recipe in this style</option>
+                  <option value="remake">Remake: same recipe and same shots, new hands, kitchen and dishes (+ sound effects, voice-over if the reference has one)</option>
+                </select>
+                {s.storyMode === "remake" && (
+                  <p className="muted small" style={{ marginTop: 6 }}>
+                    One scene per shot of the reference. Use the &quot;Match it automatically&quot; button below so the number of scenes and the
+                    shot length follow the reference. The narration (if any) is rewritten in {s.language}.
+                  </p>
+                )}
+              </div>
+            )}
+            {recipe && s.storyMode !== "remake" && (
+              <div className="field" style={{ marginTop: 12 }}>
                 <label>Recipe to show (from your blog): name + what it looks like inside. Leave empty and Claude picks a different dish.</label>
                 <textarea value={settings.instructions} onChange={(e) => set({ instructions: e.target.value })}
                   placeholder="e.g. Tiramisu in a glass dish: ladyfingers soaked in coffee, thick mascarpone cream, cocoa on top" />
@@ -256,7 +271,7 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
             {msg && <div className="alert bad">{msg}</div>}
             <div className="row">
               <button className="primary" disabled={busy || data.status === "failed"} onClick={create}>
-                {busy ? "Creating…" : recipe ? `Make ${count} recipe reel${count === 1 ? "" : "s"}` : s.storyMode === "remake" ? `Make ${count} remake${count === 1 ? "" : "s"}` : `Write ${count} new stor${count === 1 ? "y" : "ies"}`}
+                {busy ? "Creating…" : recipe ? (s.storyMode === "remake" ? `Make ${count} recipe remake${count === 1 ? "" : "s"}` : `Make ${count} recipe reel${count === 1 ? "" : "s"}`) : s.storyMode === "remake" ? `Make ${count} remake${count === 1 ? "" : "s"}` : `Write ${count} new stor${count === 1 ? "y" : "ies"}`}
               </button>
               <span className="muted small">
                 Writing is nearly free. Video for one reel: about {money(estimateVideoCost(s))} ({s.sceneCount} clips × {s.clipSeconds}s generated{s.shotSeconds > 0 && s.shotSeconds < s.clipSeconds ? `, ${s.shotSeconds}s shown each → ${Math.round(s.sceneCount * s.shotSeconds)}s reel` : ""}), charged only when you generate.

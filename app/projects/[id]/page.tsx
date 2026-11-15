@@ -344,6 +344,12 @@ function StoryPanel({ data, busy, run, reload, setMsg }: {
 }) {
   const [draft, setDraft] = useState<Story | null>(data.story);
   const [dirty, setDirty] = useState(false);
+  const recipe = data.settings.kind === "recipe";
+  const narrator = data.settings.narrator || "";
+  const onNarrator = async (v: string) => {
+    await postJson(`/api/projects/${data.id}`, { settings: { narrator: v } }, "PATCH").catch((e) => setMsg(e.message));
+    reload();
+  };
   const [feedback, setFeedback] = useState("");
   const [open, setOpen] = useState(!data.final_url);
 
@@ -395,6 +401,20 @@ function StoryPanel({ data, busy, run, reload, setMsg }: {
             <div className="field"><label>Hook text (top of the reel)</label><input type="text" value={draft.hook_text} onChange={(e) => edit({ hook_text: e.target.value })} /></div>
           </div>
           <div className="field"><label>End card (last seconds — sends viewers to the full story)</label><input type="text" value={draft.end_text ?? ""} onChange={(e) => edit({ end_text: e.target.value })} placeholder="What happened next? Full story in the comments 👇" /></div>
+          {recipe && (
+            <div className="field">
+              <label>Voice-over (spoken over the whole reel, leave empty for none)</label>
+              <textarea rows={3} value={draft.voiceover ?? ""} onChange={(e) => edit({ voiceover: e.target.value || null })}
+                placeholder="Narration in the reel language" />
+              <div className="row" style={{ gap: 8, marginTop: 6 }}>
+                <span className="muted small">Narrator voice</span>
+                <select style={{ width: "auto" }} value={narrator} onChange={(e) => onNarrator(e.target.value)}>
+                  <option value="">Jessica (default)</option>
+                  {ALL_VOICES.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
           <div className="field"><label>Logline</label><textarea rows={2} value={draft.logline} onChange={(e) => edit({ logline: e.target.value })} /></div>
           <div className="field"><label>Setting (used in every image)</label><textarea rows={2} value={draft.setting} onChange={(e) => edit({ setting: e.target.value })} /></div>
 

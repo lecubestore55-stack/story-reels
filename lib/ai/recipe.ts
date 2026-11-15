@@ -50,6 +50,12 @@ const recipeTool = () => ({
           required: ["key", "name", "role", "visual"],
         },
       },
+      voiceover: {
+        type: ["string", "null"],
+        description:
+          "Narration spoken over the whole reel, in the requested language, or null when the reference has no voice-over. " +
+          "Short, warm, natural home-cook voice; must fit the reel length (about 2.3 words per second).",
+      },
       scenes: {
         type: "array",
         minItems: 1,
@@ -80,6 +86,26 @@ const recipeTool = () => ({
   },
 });
 
+const SYSTEM_REMAKE = `You REMAKE short vertical RECIPE reels for a Facebook food page that sends viewers to recipes on its website.
+A remake keeps the SAME recipe and the SAME sequence of shots as the reference, but everything you see is new,
+so the reel is original footage and not a repost.
+
+Keep exactly:
+- the same dish and the same recipe steps, in the same order;
+- one scene per reference shot, same action in each shot (e.g. browning beef in a pan, spooning filling into a cone,
+  sprinkling cheese, tray into the oven, cheese pull on the plate), similar framing and length;
+- the same hook idea (if it opens on the finished dish / cheese pull, so does yours) and the same ending.
+Change everything visual: the cook's hands (skin tone, nail color, jewelry, sleeves), the kitchen and counter, the cookware,
+plates and props, the light, small plating details. Never copy text from the reference.
+
+Sound: the reel keeps natural cooking sounds (sizzle, crunch, knife, oven door) — mention the sound in each motion_prompt.
+Voice-over: if the reference has a narrator (see its audio/transcript), write "voiceover" = the same narration adapted
+(not word for word) into the requested language and fitted to the reel length. If it has no voice, voiceover = null.
+
+Rules: only hands, never faces. Nobody speaks on camera (dialogue and speaker null).
+title, logline, setting, character fields, beat, frame_prompt and motion_prompt in ENGLISH; hook_text, end_text and voiceover
+in the requested language. The dish is the only "character" and its look stays identical in every shot where it is finished.`;
+
 const SYSTEM = `You plan short vertical RECIPE reels for a Facebook food page that sends viewers to recipes on its website.
 The reels are "food porn": no talking, no faces, one appetizing dish, slow satisfying actions in close-up
 (cutting into it, lifting a tall slice to show every layer, gooey/creamy/crunchy textures, a final cross-section money shot).
@@ -104,8 +130,10 @@ export async function writeRecipe(args: {
 }): Promise<{ story: Story; cost: number }> {
   if (isMock()) return { story: mockRecipe(args.settings), cost: 0 };
   const { analysis, settings } = args;
+  const remake = settings.storyMode === "remake";
+  const total = settings.sceneCount * (settings.shotSeconds || settings.clipSeconds);
   const parts = [
-    `Reference recipe reel (competitor, for rhythm and style only):\n${JSON.stringify(analysis, null, 2)}`,
+    `Reference recipe reel (competitor${remake ? "" : ", for rhythm and style only"}):\n${JSON.stringify(analysis, null, 2)}`,
     analysis.shots
       ? `Reference rhythm (measured): ${analysis.shots.duration}s long, ${analysis.shots.count} shot(s), lengths: ${analysis.shots.durations.join(", ")}s.`
       : "",
@@ -115,7 +143,12 @@ export async function writeRecipe(args: {
       (settings.country
         ? `\n- Audience: ${settings.country}. Choose a dish people there love or crave (or a local twist), kitchen and tableware that feel local.`
         : "") +
-      `\n- dialogue and speaker are always null.`,
+      `\n- dialogue and speaker are always null.` +
+      (remake && analysis.shots && analysis.shots.count === settings.sceneCount
+        ? `\n- Follow the reference shots one by one: scene i = reference shot i (lengths ${analysis.shots.durations.join(", ")}s).`
+        : "") +
+      `\n- The final reel is about ${Math.round(total)} seconds: a voiceover (if any) must be at most ${Math.round(total * 2.3)} words.` +
+      (remake ? "" : `\n- voiceover: null unless the page owner asks for narration.`),
     settings.instructions.trim()
       ? `Page owner's direction (the recipe to show, from their blog — follow it exactly):\n${settings.instructions.trim()}`
       : "",
@@ -131,7 +164,7 @@ export async function writeRecipe(args: {
     if (!config.falKey) throw new Error("Set FAL_KEY (or ANTHROPIC_API_KEY) to write recipe reels");
     const r = await routerJson({
       kind: "text",
-      system: SYSTEM,
+      system: remake ? SYSTEM_REMAKE : SYSTEM,
       prompt:
         parts.join("\n\n") +
         `\n\nAnswer with ONLY a JSON object (no markdown) that matches this JSON Schema:\n${JSON.stringify(recipeTool().input_schema)}`,
@@ -145,7 +178,7 @@ export async function writeRecipe(args: {
     const msg = await client.messages.create({
       model: config.claudeModel,
       max_tokens: 4000,
-      system: SYSTEM,
+      system: remake ? SYSTEM_REMAKE : SYSTEM,
       tools: [recipeTool() as any],
       tool_choice: { type: "tool", name: "save_story" },
       messages: [{ role: "user", content: parts.join("\n\n") }],
