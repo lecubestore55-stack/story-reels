@@ -196,7 +196,18 @@ const isChild = (c: StoryCharacter) =>
 function framePrompt(p: ProjectRow, scene: StoryScene, refs: StoryCharacter[]) {
   const story = requireStory(p);
   if (p.settings.kind === "recipe") {
-    const dish = refs.find((c) => c.role === "dish") || story.characters[0];
+    const dish = refs.find((c) => c.role === "dish");
+    if (!dish) {
+      // A cooking STEP: the finished dish must not appear (otherwise the model pastes the final plate everywhere).
+      return (
+        `Create a photorealistic vertical 9:16 close-up cooking video still for a recipe reel. It is the FIRST frame of the shot: ` +
+        `the moment just before the action.\nKitchen: ${story.setting}\nShot: ${scene.frame_prompt}\n` +
+        `This is a preparation step: show ONLY the ingredients and cookware in their state at this step (raw, cooking or ` +
+        `unbaked as described). The finished, plated dish is NOT in this image — no plate of finished food anywhere. ` +
+        `Close framing, real textures, soft natural light, shallow depth of field. Only hands may appear, no faces. ` +
+        `No text, no captions, no logo, no brand packaging, no watermark.`
+      );
+    }
     return (
       `Create a photorealistic vertical 9:16 close-up food video still for a recipe reel. It is the FIRST frame of the shot: ` +
       `the moment just before the action (the utensil is resting or just touching the food, nothing is lifted yet).\n` +

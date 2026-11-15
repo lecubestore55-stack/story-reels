@@ -65,11 +65,21 @@ const recipeTool = () => ({
           properties: {
             index: { type: "integer", description: "0-based" },
             beat: { type: "string", description: "What the shot shows, e.g. 'spatula lifts the first slice'. ENGLISH." },
-            characters: { type: "array", items: { type: "string" }, description: "['dish'] when the dish is visible" },
+            characters: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "['dish'] ONLY when the FINISHED dish is in the shot (opening money shot, final plate, cutting/tasting the finished dish). " +
+                "[] for every preparation step (raw ingredients, cooking in the pan, filling, topping, going into the oven).",
+            },
             frame_prompt: {
               type: "string",
               description:
-                "FIRST frame = the moment just BEFORE the action (knife above the cake, spoon resting on the surface, full pan before the cut). Close framing, the food fills most of the vertical 9:16 frame, shallow depth of field, only the cook's hands may appear (no faces). ENGLISH.",
+                "FIRST frame = the moment just BEFORE the action (knife above the cake, spoon resting on the surface, full pan before the cut). " +
+                "Describe the food EXACTLY in its state at this step (e.g. 'raw ground beef just added to a hot black skillet', " +
+                "'six empty tortilla cones standing in a baking tray', 'filled cones with no cheese yet'). Never put the finished dish " +
+                "in a preparation step. Close framing, the food fills most of the vertical 9:16 frame, shallow depth of field, " +
+                "only the cook's hands may appear (no faces). ENGLISH.",
             },
             motion_prompt: {
               type: "string",
@@ -102,6 +112,8 @@ Sound: the reel keeps natural cooking sounds (sizzle, crunch, knife, oven door) 
 Voice-over: if the reference has a narrator (see its audio/transcript), write "voiceover" = the same narration adapted
 (not word for word) into the requested language and fitted to the reel length. If it has no voice, voiceover = null.
 
+Each step shows the food in its real state at that moment (raw beef browning, empty cones, filled cones without cheese,
+unbaked tray going into the oven); the finished dish appears ONLY in the shots where the reference shows it finished.
 Rules: only hands, never faces. Nobody speaks on camera (dialogue and speaker null).
 title, logline, setting, character fields, beat, frame_prompt and motion_prompt in ENGLISH; hook_text, end_text and voiceover
 in the requested language. The dish is the only "character" and its look stays identical in every shot where it is finished.`;
@@ -111,6 +123,8 @@ The reels are "food porn": no talking, no faces, one appetizing dish, slow satis
 (cutting into it, lifting a tall slice to show every layer, gooey/creamy/crunchy textures, a final cross-section money shot).
 
 Rules:
+- Cooking STEPS show the food in its real state at that moment (raw, browning, unfilled, unbaked); the finished dish
+  appears ONLY in the money shots (usually the first and last). Steps follow the real order of the recipe.
 - One dish only. Its look (layers, toppings, pan, plate) must be described precisely and stay identical in every shot.
 - Make it look homemade but irresistible: real food, generous portions, natural light in a real home kitchen.
 - Each shot = one simple action that a video model can do realistically. No text, no logos, no brand packaging in the image.
@@ -189,7 +203,7 @@ export async function writeRecipe(args: {
   }
   // Force the recipe shape whatever the model returned.
   story.characters = story.characters.slice(0, 1).map((c) => ({ ...c, key: "dish", role: "dish", gender: null, age: null, voice: null }));
-  story.scenes = story.scenes.map((s) => ({ ...s, characters: ["dish"], dialogue: null, speaker: null }));
+  story.scenes = story.scenes.map((s) => ({ ...s, characters: s.characters.includes("dish") ? ["dish"] : [], dialogue: null, speaker: null }));
   const fixed = await ensureEnglish(normalize(story));
   return { story: fixed.story, cost: cost + fixed.cost };
 }
