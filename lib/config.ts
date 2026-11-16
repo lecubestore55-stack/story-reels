@@ -139,7 +139,7 @@ export const IMAGE_TIERS: Record<ImageTierId, ImageTier> = {
 };
 
 // ---------------------------------------------------------------- video
-export type VideoModelId = "veo3.1-lite" | "kling-2.5-turbo" | "kling-v3-turbo" | "kling-v3-pro" | "veo3.1";
+export type VideoModelId = "veo3.1-lite" | "kling-2.5-turbo" | "kling-v3-turbo" | "kling-v3-pro" | "veo3.1" | "seedance-2-fast" | "happy-horse";
 
 export interface VideoModel {
   id: VideoModelId;
@@ -160,6 +160,40 @@ const NEG = "blur, distort, low quality, text, subtitles, watermark, extra finge
 
 // Prices are fal.ai list prices per second of output (720p) at the time of writing.
 export const VIDEO_MODELS: Record<VideoModelId, VideoModel> = {
+  "happy-horse": {
+    id: "happy-horse",
+    label: "Happy Horse 1.0 — top quality, sound always on ($0.14/s)",
+    endpoint: process.env.FAL_HAPPY_HORSE_ENDPOINT || "alibaba/happy-horse/image-to-video",
+    minSeconds: 3,
+    maxSeconds: 15,
+    supportsAudio: true,
+    snapSeconds: (s) => Math.min(15, Math.max(3, Math.round(s))),
+    buildInput: ({ prompt, imageUrl, seconds }) => ({
+      image_url: imageUrl,
+      prompt: prompt.slice(0, 2500),
+      duration: Math.min(15, Math.max(3, Math.round(seconds))),
+      resolution: "720p",
+    }),
+    pricePerSecond: () => 0.14,
+  },
+  "seedance-2-fast": {
+    id: "seedance-2-fast",
+    label: "Seedance 2.0 Fast — best physics, hands & food, with sound ($0.24/s)",
+    endpoint: process.env.FAL_SEEDANCE_ENDPOINT || "bytedance/seedance-2.0/fast/image-to-video",
+    minSeconds: 4,
+    maxSeconds: 15,
+    supportsAudio: true,
+    snapSeconds: (s) => Math.min(15, Math.max(4, Math.round(s))),
+    buildInput: ({ prompt, imageUrl, seconds, audio }) => ({
+      image_url: imageUrl,
+      prompt,
+      duration: String(Math.min(15, Math.max(4, Math.round(seconds)))),
+      aspect_ratio: "9:16",
+      resolution: "720p",
+      generate_audio: audio,
+    }),
+    pricePerSecond: () => 0.2419,
+  },
   "veo3.1-lite": {
     id: "veo3.1-lite",
     label: "Veo 3.1 Lite — cheapest with sound ($0.05/s, $0.03/s silent)",
