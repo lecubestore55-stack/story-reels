@@ -149,6 +149,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                     const note = prompt(`Regenerate ${c.name}. Optional change (e.g. "older, grey hair"):`, "");
                     if (note !== null) run("characters", { only: c.key, note });
                   }}>Regenerate</button>
+                  <UploadButton projectId={data.id} kind="character" refKey={c.key} disabled={busy} onDone={reload} />
                 </div>
               );
             })}
@@ -178,6 +179,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                     const note = prompt(`Regenerate scene ${sc.index + 1} frame. Optional change:`, "");
                     if (note !== null) run("frames", { only: sc.index, note });
                   }}>Regenerate</button>
+                  <UploadButton projectId={data.id} kind="frame" refKey={String(sc.index)} disabled={busy} onDone={reload} />
                 </div>
               );
             })}
@@ -514,4 +516,34 @@ function AssetStatus({ a }: { a?: Asset }) {
   if (!a) return null;
   if (a.status === "failed") return <span className="small" style={{ color: "var(--bad)" }}>{a.error}</span>;
   return null;
+}
+
+
+/** Use your own image (made in ChatGPT, a photo…) instead of generating one. */
+function UploadButton(props: { projectId: string; kind: "character" | "frame"; refKey: string; disabled?: boolean; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <label className="btn" style={{ justifyContent: "center", cursor: "pointer", opacity: props.disabled || busy ? 0.5 : 1 }}>
+      {busy ? "Uploading…" : "Upload my image (free)"}
+      <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} disabled={props.disabled || busy}
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          setBusy(true);
+          const fd = new FormData();
+          fd.set("kind", props.kind);
+          fd.set("ref", props.refKey);
+          fd.set("image", f);
+          try {
+            await api(`/api/projects/${props.projectId}/upload`, { method: "POST", body: fd });
+            props.onDone();
+          } catch (err: any) {
+            alert(err.message);
+          } finally {
+            setBusy(false);
+            e.target.value = "";
+          }
+        }} />
+    </label>
+  );
 }
