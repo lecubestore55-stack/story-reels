@@ -156,6 +156,15 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                   }}>Regenerate</button>
                   <CopyButton text={chatgptCharacterPrompt(c, story)} />
                   <UploadButton projectId={data.id} kind="character" refKey={c.key} disabled={busy} onDone={reload} />
+                  {recipe && c.role === "dish" && data.reference && data.reference.kind !== "source" && (
+                    <button disabled={busy} onClick={async () => {
+                      const t = prompt("Second of the reference video where the finished dish is best seen (e.g. 0.5 or 9):", "0.5");
+                      if (t === null) return;
+                      const fd = new FormData();
+                      fd.set("kind", "character"); fd.set("ref", c.key); fd.set("fromReference", t);
+                      try { await api(`/api/projects/${data.id}/upload`, { method: "POST", body: fd }); reload(); } catch (e: any) { alert(e.message); }
+                    }}>🎞 Use the dish from the reference</button>
+                  )}
                 </div>
               );
             })}

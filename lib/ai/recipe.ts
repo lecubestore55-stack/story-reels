@@ -63,7 +63,7 @@ const recipeTool = () => ({
             visual: {
               type: "string",
               description:
-                "Exact look of the finished dish for image generation: the dish/pan/plate, every layer from bottom to top with colors and thickness, textures, toppings, garnish, portion size. Reused in every shot. ENGLISH only.",
+                "Exact look of the finished dish for image generation. Start with the SHAPE of each main item so it is instantly recognizable (e.g. 'small half-moon pierogi with pinched crimped edges, about 8 cm, packed side by side', 'crispy tortilla cones standing upright'), then the vessel (material, shape, color, pattern), sauce, cheese (melted, golden-brown spots), toppings, garnish, how full it is, and what the inside looks like when a portion is lifted. Reused in every shot. ENGLISH only.",
             },
           },
           required: ["key", "name", "role", "visual"],
@@ -159,6 +159,9 @@ The reels are "food porn": no talking, no faces, one appetizing dish, slow satis
 Rules:
 - Cooking STEPS show the food in its real state at that moment (raw, browning, unfilled, unbaked); the finished dish
   appears ONLY in the money shots (usually the first and last). Steps follow the real order of the recipe.
+- The hook (scene 0) shows the finished dish with an irresistible moment: a spoon/spatula lifting a portion with a long
+  cheese pull, sauce dripping, steam, a knife cutting through layers — the frame_prompt describes the utensil touching the food.
+- Every frame is CLOSE: the food fills about 85% of the vertical frame, camera at about 45 degrees, almost no background.
 - One dish only. Its look (layers, toppings, pan, plate) must be described precisely and stay identical in every shot.
 - Make it look homemade but irresistible: real food, generous portions, natural light in a real home kitchen.
 - Each shot = one simple action that a video model can do realistically. No text, no logos, no brand packaging in the image.

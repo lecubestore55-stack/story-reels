@@ -252,3 +252,9 @@ export async function replaceAudio(video: string, audios: { file: string; volume
   );
   await run("ffmpeg", args);
 }
+
+/** Save one frame of a video as a JPG (used to take the dish from a reference reel). */
+export async function grabFrame(video: string, seconds: number, output: string): Promise<void> {
+  await mkdir(path.dirname(output), { recursive: true });
+  await run("ffmpeg", ["-y", "-ss", Math.max(0, seconds).toFixed(2), "-i", video, "-frames:v", "1", "-q:v", "2", output]);
+}

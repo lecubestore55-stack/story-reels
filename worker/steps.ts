@@ -95,9 +95,11 @@ export async function writeStep(projectId: string, payload: { feedback?: string 
 function characterPrompt(c: StoryCharacter) {
   if (c.role === "dish") {
     return (
-      `Photorealistic close-up food photo of a homemade dish, vertical 9:16, the dish fills most of the frame, three-quarter ` +
-      `angle, soft natural window light, shallow depth of field, real home kitchen softly blurred behind. ${c.visual}. ` +
-      `Real food with real textures, appetizing, generous, slightly imperfect homemade look, not plastic, not CGI, not overly styled. ` +
+      `Photorealistic close-up food photo of a homemade dish just out of the oven, vertical 9:16. CLOSE framing: the dish fills ` +
+      `85% of the frame, camera at 45 degrees, almost no background (only a blurred hint of the kitchen at the very top). ` +
+      `${c.visual}. Every item keeps its real recognizable shape. One portion already scooped out so the inside and the sauce ` +
+      `are visible, a little steam rising. Soft natural window light, shallow depth of field. Real food with real textures, ` +
+      `appetizing, generous, slightly messy homemade look, not plastic, not CGI, not overly styled. ` +
       `No people, no text, no logo, no brand packaging, no watermark.`
     );
   }
@@ -219,7 +221,8 @@ function framePrompt(p: ProjectRow, scene: StoryScene, refs: StoryCharacter[]) {
         `the moment just before the action.\nKitchen: ${story.setting}\nShot: ${scene.frame_prompt}\n` +
         `This is a preparation step: show ONLY the ingredients and cookware in their state at this step (raw, cooking or ` +
         `unbaked as described). The finished, plated dish is NOT in this image — no plate of finished food anywhere. ` +
-        `Close framing, real textures, soft natural light, shallow depth of field. Only hands may appear, no faces. ` +
+        `CLOSE framing: the food fills 85% of the vertical frame, camera at 45 degrees, almost no background. Real textures, ` +
+        `soft natural light, shallow depth of field. Only hands may appear, no faces. ` +
         `No text, no captions, no logo, no brand packaging, no watermark.`
       );
     }
@@ -228,8 +231,9 @@ function framePrompt(p: ProjectRow, scene: StoryScene, refs: StoryCharacter[]) {
       `the moment just before the action (the utensil is resting or just touching the food, nothing is lifted yet).\n` +
       `Kitchen: ${story.setting}\nShot: ${scene.frame_prompt}\n` +
       (dish ? `The dish must look exactly like the reference image: ${dish.visual}\n` : "") +
-      `The food fills most of the frame, appetizing real textures, soft natural light, shallow depth of field. ` +
-      `Only hands may appear, no faces. No text, no captions, no logo, no brand packaging, no watermark.`
+      `CLOSE framing: the food fills 85% of the vertical frame, camera at 45 degrees, almost no background. ` +
+      `Every item keeps its real recognizable shape. Appetizing real textures, slightly messy homemade look, soft natural light, ` +
+      `shallow depth of field. Only hands may appear, no faces. No text, no captions, no logo, no brand packaging, no watermark.`
     );
   }
   const people = refs.length
