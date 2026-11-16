@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import { ALL_VOICES, IMAGE_TIERS, LIPSYNC_PRICE_PER_SECOND, VIDEO_MODELS, useDub, type ProjectSettings } from "@/lib/config";
 import { voiceMap, voiceNote } from "@/lib/voices";
+import { chatgptAll, chatgptCharacterPrompt, chatgptFramePrompt } from "@/lib/chatgptPrompts";
 import type { Story, StoryScene } from "@/lib/types";
 import { Badge, api, money, postJson, usePolling } from "../../ui";
 
@@ -136,6 +137,10 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
               ? "One photo of the finished dish. Every shot is built from it, so the layers and toppings stay the same."
               : "One reference photo per character. Every scene image is built from these, so faces and outfits stay the same."}
           </p>
+          <div className="row small" style={{ margin: "8px 0 4px" }}>
+            <span className="muted">Make the images in ChatGPT instead (free):</span>
+            <CopyButton text={chatgptAll(story, recipe)} label="📋 Copy all prompts for ChatGPT" />
+          </div>
           <div className="grid g4" style={{ marginTop: 10 }}>
             {story.characters.map((c) => {
               const a = asset("character", c.key);
@@ -149,6 +154,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                     const note = prompt(`Regenerate ${c.name}. Optional change (e.g. "older, grey hair"):`, "");
                     if (note !== null) run("characters", { only: c.key, note });
                   }}>Regenerate</button>
+                  <CopyButton text={chatgptCharacterPrompt(c, story)} />
                   <UploadButton projectId={data.id} kind="character" refKey={c.key} disabled={busy} onDone={reload} />
                 </div>
               );
@@ -166,6 +172,12 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
             </button>
           </div>
           <p className="muted small">The first image of each clip. Check them carefully: a good frame is the cheapest way to get a good video.</p>
+          <div className="alert ok small" style={{ marginTop: 10 }}>
+            Want to make the images yourself in ChatGPT (free with your plan)? Copy all the prompts, paste them one by one in a
+            single ChatGPT chat (attach the {s.kind === "recipe" ? "dish photo" : "character photos"} to the first message),
+            then put each image on its scene with &quot;Upload my image&quot;.
+            <div style={{ marginTop: 8 }}><CopyButton text={chatgptAll(story, s.kind === "recipe")} label="📋 Copy all prompts for ChatGPT" /></div>
+          </div>
           <div className="grid g4" style={{ marginTop: 10 }}>
             {story.scenes.map((sc) => {
               const a = asset("frame", String(sc.index));
@@ -179,6 +191,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
                     const note = prompt(`Regenerate scene ${sc.index + 1} frame. Optional change:`, "");
                     if (note !== null) run("frames", { only: sc.index, note });
                   }}>Regenerate</button>
+                  <CopyButton text={chatgptFramePrompt(sc, story, s.kind === "recipe")} />
                   <UploadButton projectId={data.id} kind="frame" refKey={String(sc.index)} disabled={busy} onDone={reload} />
                 </div>
               );
@@ -545,5 +558,22 @@ function UploadButton(props: { projectId: string; kind: "character" | "frame"; r
           }
         }} />
     </label>
+  );
+}
+
+
+function CopyButton({ text, label = "📋 Copy prompt for ChatGPT" }: { text: string; label?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" onClick={async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const t = document.createElement("textarea");
+        t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove();
+      }
+      setDone(true);
+      setTimeout(() => setDone(false), 1500);
+    }}>{done ? "✓ Copied" : label}</button>
   );
 }
