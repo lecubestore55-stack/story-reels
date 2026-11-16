@@ -16,7 +16,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
   if (!isUuid(id)) return fail("Bad id", 404);
   const p = await one(`SELECT * FROM projects WHERE id=$1`, [id]);
   if (!p) return fail("Not found", 404);
-  const ref = await one(`SELECT id, title, status, video_path, analysis FROM story_references WHERE id=$1`, [p.reference_id]);
+  const ref = await one(`SELECT id, title, status, video_path, analysis, kind FROM story_references WHERE id=$1`, [p.reference_id]);
   const assets = await q(`SELECT kind, ref, status, path, error, updated_at FROM assets WHERE project_id=$1`, [id]);
   const settings = normalizeSettings(p.settings);
   return json({
@@ -24,7 +24,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     settings,
     final_url: fileUrl(p.final_path),
     music_url: fileUrl(p.music_path),
-    reference: ref && { id: ref.id, title: ref.title, status: ref.status, video_url: fileUrl(ref.video_path), analysis: ref.analysis },
+    reference: ref && { id: ref.id, kind: ref.kind, title: ref.title, status: ref.status, video_url: fileUrl(ref.video_path), analysis: ref.analysis },
     assets: assets.map((a) => ({ ...a, url: fileUrl(a.path) })),
     jobs: await activeJobs(id),
     estimate_usd: estimateVideoCost(settings, p.story?.characters?.length ?? 3),

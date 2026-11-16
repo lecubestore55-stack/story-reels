@@ -13,6 +13,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <nav className="tabs">
             <a href="/">📖 Stories</a>
             <a href="/recipes">🍰 Recipes</a>
+            <a href="/recipes/mine">🔗 From my recipe</a>
           </nav>
           <LogoutButton />
         </header>

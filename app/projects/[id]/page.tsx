@@ -17,7 +17,7 @@ interface Project {
   cost_usd: string;
   final_url: string | null;
   music_url: string | null;
-  reference: { id: string; title: string; status: string; video_url: string } | null;
+  reference: { id: string; kind?: string; title: string; status: string; video_url: string } | null;
   assets: Asset[];
   jobs: { id: number; type: string; status: string; error: string | null }[];
   estimate_usd: number;
@@ -80,7 +80,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
   return (
     <>
       <p className="small">
-        <a href={data.reference ? `/references/${data.reference.id}` : "/"}>← {data.reference?.title ?? "Back"}</a>
+        <a href={data.reference?.kind === "source" ? "/recipes/mine" : data.reference ? `/references/${data.reference.id}` : "/"}>← {data.reference?.kind === "source" ? "My recipes" : data.reference?.title ?? "Back"}</a>
       </p>
       <div className="row between">
         <h1>{data.title}</h1>
@@ -92,7 +92,7 @@ export default function ProjectPage({ params }: { params: Promise<{ id: string }
             onClick={async () => {
               if (!confirm("Delete this reel and its files?")) return;
               await api(`/api/projects/${id}`, { method: "DELETE" });
-              window.location.href = data.reference ? `/references/${data.reference.id}` : "/";
+              window.location.href = data.reference?.kind === "source" ? "/recipes/mine" : data.reference ? `/references/${data.reference.id}` : "/";
             }}
           >
             Delete

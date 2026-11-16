@@ -412,7 +412,7 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     autoRun: Boolean(s.autoRun),
     language: String(s.language || "English").slice(0, 40),
     country: String(s.country ?? "").slice(0, 60),
-    instructions: String(s.instructions || "").slice(0, 2000),
+    instructions: String(s.instructions || "").slice(0, 8000),
     kind: s.kind === "recipe" ? "recipe" : "story",
     storyMode: s.storyMode === "remake" ? "remake" : "original",
     drama: s.drama === "strong" ? "strong" : "safe",

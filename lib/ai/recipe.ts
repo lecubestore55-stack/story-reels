@@ -4,6 +4,25 @@ import { StorySchema, type Analysis, type Story } from "../types";
 import { isMock, mockRecipe } from "../mock";
 import { routerJson } from "./router";
 import { STORY_TOOL, ensureEnglish, normalize } from "./claude";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+/** Let Claude see the blog photo of the finished dish, so the "dish" description matches it. */
+async function withPhoto(text: string, photo?: string | null): Promise<any> {
+  if (!photo) return text;
+  try {
+    const buf = await fs.readFile(photo);
+    if (buf.length > 4.5 * 1024 * 1024) return text;
+    const ext = path.extname(photo).toLowerCase();
+    const media_type = ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg";
+    return [
+      { type: "image", source: { type: "base64", media_type, data: buf.toString("base64") } },
+      { type: "text", text: "This is the photo of the finished dish from the blog.\n\n" + text },
+    ];
+  } catch {
+    return text;
+  }
+}
 
 /**
  * Recipe reels reuse the story pipeline: the dish is the only "character" (one reference photo keeps it
@@ -118,6 +137,21 @@ Rules: only hands, never faces. Nobody speaks on camera (dialogue and speaker nu
 title, logline, setting, character fields, beat, frame_prompt and motion_prompt in ENGLISH; hook_text, end_text and voiceover
 in the requested language. The dish is the only "character" and its look stays identical in every shot where it is finished.`;
 
+const SYSTEM_SOURCE = `You turn a recipe from the page owner's own food blog into a short vertical PREPARATION reel for Facebook
+that sends viewers to the full recipe on the blog.
+
+- Use THIS recipe exactly: its real ingredients, in the real order of its steps. Pick the most visual steps
+  (chopping, pouring, mixing, layering, frying, filling, topping, going into the oven, cutting) — one scene each.
+- Scene 0 is the hook: the finished dish big in frame with an irresistible action (cut, pull, pour, spoon into it).
+  The last scene is the money shot of the finished dish. The steps in between show the food in its real state at that step.
+- The dish "character" must look like the attached photo of the finished dish (describe it precisely in "visual":
+  vessel, layers, colors, toppings). ['dish'] only on shots where the finished dish is visible.
+- Only the cook's hands, never faces; nobody speaks (dialogue/speaker null). Each shot = one simple realistic action.
+- Mention the cooking sound in each motion_prompt (sizzle, knife on board, whisk, crunch, oven door).
+- hook_text and end_text in the requested language; end_text sends people to the full recipe (comments / link).
+- voiceover: null unless the page owner asks for narration.
+- title, logline, setting, character fields, beat, frame_prompt and motion_prompt in ENGLISH.`;
+
 const SYSTEM = `You plan short vertical RECIPE reels for a Facebook food page that sends viewers to recipes on its website.
 The reels are "food porn": no talking, no faces, one appetizing dish, slow satisfying actions in close-up
 (cutting into it, lifting a tall slice to show every layer, gooey/creamy/crunchy textures, a final cross-section money shot).
@@ -141,10 +175,13 @@ export async function writeRecipe(args: {
   avoid: string[];
   feedback?: string;
   previous?: Story | null;
+  photo?: string | null;
 }): Promise<{ story: Story; cost: number }> {
   if (isMock()) return { story: mockRecipe(args.settings), cost: 0 };
   const { analysis, settings } = args;
-  const remake = settings.storyMode === "remake";
+  const own = analysis.genre === "own recipe";
+  const remake = !own && settings.storyMode === "remake";
+  const system = own ? SYSTEM_SOURCE : remake ? SYSTEM_REMAKE : SYSTEM;
   const total = settings.sceneCount * (settings.shotSeconds || settings.clipSeconds);
   const parts = [
     `Reference recipe reel (competitor${remake ? "" : ", for rhythm and style only"}):\n${JSON.stringify(analysis, null, 2)}`,
@@ -164,7 +201,7 @@ export async function writeRecipe(args: {
       `\n- The final reel is about ${Math.round(total)} seconds: a voiceover (if any) must be at most ${Math.round(total * 2.3)} words.` +
       (remake ? "" : `\n- voiceover: null unless the page owner asks for narration.`),
     settings.instructions.trim()
-      ? `Page owner's direction (the recipe to show, from their blog — follow it exactly):\n${settings.instructions.trim()}`
+      ? `${own ? "THE RECIPE (from the page owner's blog)" : "Page owner's direction (the recipe to show, from their blog — follow it exactly)"}:\n${settings.instructions.trim()}`
       : "",
     args.avoid.length ? `Dishes already made from this reference — choose a clearly different one:\n- ${args.avoid.join("\n- ")}` : "",
     args.previous && args.feedback
@@ -178,7 +215,7 @@ export async function writeRecipe(args: {
     if (!config.falKey) throw new Error("Set FAL_KEY (or ANTHROPIC_API_KEY) to write recipe reels");
     const r = await routerJson({
       kind: "text",
-      system: remake ? SYSTEM_REMAKE : SYSTEM,
+      system,
       prompt:
         parts.join("\n\n") +
         `\n\nAnswer with ONLY a JSON object (no markdown) that matches this JSON Schema:\n${JSON.stringify(recipeTool().input_schema)}`,
@@ -192,10 +229,10 @@ export async function writeRecipe(args: {
     const msg = await client.messages.create({
       model: config.claudeModel,
       max_tokens: 4000,
-      system: remake ? SYSTEM_REMAKE : SYSTEM,
+      system,
       tools: [recipeTool() as any],
       tool_choice: { type: "tool", name: "save_story" },
-      messages: [{ role: "user", content: parts.join("\n\n") }],
+      messages: [{ role: "user", content: await withPhoto(parts.join("\n\n"), own ? args.photo : null) }],
     });
     const block = msg.content.find((b) => b.type === "tool_use");
     if (!block || block.type !== "tool_use") throw new Error("Claude did not return a recipe plan");

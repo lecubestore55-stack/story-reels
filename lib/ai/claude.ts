@@ -194,6 +194,7 @@ export async function writeStory(args: {
   avoid: string[];        // loglines of earlier stories made from the same reference
   feedback?: string;      // user's notes for a rewrite
   previous?: Story | null;
+  photo?: string | null;  // own-recipe reels: absolute path of the dish photo
 }): Promise<{ story: Story; cost: number }> {
   if (args.settings.kind === "recipe") return writeRecipe(args);
   if (isMock()) return { story: mockStory(args.settings), cost: 0 };

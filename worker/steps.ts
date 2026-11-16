@@ -60,7 +60,7 @@ export async function analyzeStep(referenceId: string) {
 // ---------------------------------------------------------------- write
 export async function writeStep(projectId: string, payload: { feedback?: string }) {
   const p = await getProject(projectId);
-  const ref = await one(`SELECT status, analysis, notes FROM story_references WHERE id=$1`, [p.reference_id]);
+  const ref = await one(`SELECT status, analysis, notes, kind, video_path FROM story_references WHERE id=$1`, [p.reference_id]);
   if (!ref) throw new Error("Reference not found");
   if (ref.status === "failed") throw new Error("The reference video analysis failed. Re-run the analysis first.");
   if (ref.status !== "ready") throw new RetryLater(10, "Waiting for the reference analysis");
@@ -84,6 +84,7 @@ export async function writeStep(projectId: string, payload: { feedback?: string 
     avoid: siblings.map((s) => s.logline).filter(Boolean),
     feedback: payload.feedback,
     previous: payload.feedback ? p.story : null,
+    photo: ref.kind === "source" ? abs(ref.video_path) : null,
   });
   if (cost) await addCost(projectId, cost);
   await setProject(projectId, { story, title: story.title, status: "story_review" });
@@ -112,8 +113,22 @@ export async function charactersStep(projectId: string, payload: { only?: string
   const p = await getProject(projectId);
   const story = await englishStory(projectId, p);
   await setProject(projectId, { status: "characters", error: null });
-  const list = story.characters.filter((c) => !payload.only || c.key === payload.only);
+  let list = story.characters.filter((c) => !payload.only || c.key === payload.only);
   const tier = IMAGE_TIERS[p.settings.imageTier];
+
+  // Own recipe: the blog photo IS the dish reference (unless the user asks to regenerate it).
+  const src = await one(`SELECT kind, video_path FROM story_references WHERE id=$1`, [p.reference_id]);
+  if (src?.kind === "source" && !payload.only && !payload.note) {
+    for (const c of list.filter((x) => x.role === "dish")) {
+      const rel = `projects/${projectId}/characters/${c.key}_${stamp()}${path.extname(src.video_path) || ".jpg"}`;
+      await fs.mkdir(path.dirname(abs(rel)), { recursive: true });
+      await fs.copyFile(abs(src.video_path), abs(rel));
+      await upsertAsset(projectId, "character", c.key, {
+        status: "ready", path: rel, remote_url: null, prompt: "Photo from the recipe page", fal_endpoint: null, error: null,
+      });
+    }
+    list = list.filter((x) => x.role !== "dish");
+  }
 
   const errors = await pool(list, 3, async (c) => {
     const base = characterPrompt(c) + (payload.note ? ` ${payload.note}` : "");
