@@ -373,7 +373,8 @@ export function motionPrompt(scene: StoryScene, story?: Story | null, opts: { la
     line = " Nobody speaks in this shot: mouths stay closed, only facial expressions and body language.";
   }
   return (
-    `${scene.motion_prompt}${line} Realistic natural human motion and expressions, faces and clothing stay consistent ` +
+    `${scene.motion_prompt}${line} The action starts IMMEDIATELY in the first second and happens at real speed — no slow ` +
+    `build-up, no pause before it. Realistic natural human motion and expressions, faces and clothing stay consistent ` +
     `with the first frame, vertical framing, cinematic but believable. No on-screen text or subtitles.`
   );
 }
@@ -615,8 +616,15 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
   });
   if (errors.length) throw new Error(errors.join("\n"));
 
-  // Rendering is free and fast, so always rebuild the reel after new clips.
-  await enqueue("render", { projectId });
+  // Rendering is free and fast: rebuild the reel after new clips — once every scene has its clip
+  // (testing one scene first must not end in a "clips not ready" error).
+  if (await allClipsReady(projectId, story)) await enqueue("render", { projectId });
+  else await setProject(projectId, { status: "clips", error: null });
+}
+
+async function allClipsReady(projectId: string, story: Story): Promise<boolean> {
+  const ready = new Set((await getAssets(projectId, "clip")).filter((a) => a.status === "ready" && a.path).map((a) => a.ref));
+  return story.scenes.every((sc) => ready.has(String(sc.index)));
 }
 
 async function latestEffects(projectId: string, index: number): Promise<string | null> {
@@ -652,7 +660,7 @@ export async function voiceStep(projectId: string, payload: { only?: number }) {
     }
   });
   if (errors.length) throw new Error(errors.join("\n"));
-  await enqueue("render", { projectId });
+  if (await allClipsReady(projectId, story)) await enqueue("render", { projectId });
 }
 
 // ---------------------------------------------------------------- render

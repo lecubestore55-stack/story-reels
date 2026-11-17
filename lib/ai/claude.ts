@@ -102,9 +102,18 @@ Production rules (AI video):
   motion_prompt. Never put the peak or the result of the action in frame_prompt, and never freeze anyone mid-air.
   Examples: diving → frame: Rosa running to the pool edge, arms starting to lift; motion: she dives in.
   Slap → frame: the two women face to face, Camila's hand starting to rise; motion: the slap and the reaction.
+  Fall → frame: she is already tipping backward, knees giving way, arms flung out (the fall has begun); motion: she hits
+  the floor and screams. The frame must already show the START of the key action, never a different calm gesture
+  (touching a cheek, fixing hair): the video model continues whatever gesture the frame shows.
   Stroller falls → frame: the stroller rolling near the edge; motion: it tips over and splashes.
 - Continuity: each frame_prompt must match how the previous scene ENDED (positions, who holds the baby, wet
   clothes after the pool, objects already in the water, time of day). Write these details explicitly.
+- motion_prompt = ONE main action that starts at second 0 and is finished well inside the shot length (a 1-second shot =
+  one quick reaction; a 5-second shot = one action like "throws herself to the floor screaming"). Never a chain of
+  preparations (touches cheek, then fixes hair, then pulls the dress, then falls): video models do them slowly one by one
+  and the key action ends up cut off. Put the key action FIRST. (In a REMAKE, a shot that has several quick actions in the
+  reference keeps them all, in the same order, written as one fast continuous movement: "slaps him, instantly rips her own
+  neckline and throws herself to the floor" — no pauses between them.)
 - Each scene shows ONE clear action that a viewer understands in 2 seconds, and the scenes follow cause → effect
   in a logical order (no action shown twice, no jumps that skip what the viewer needs to understand).
 - Dialogue: at most ONE speaker per scene. Set "speaker" to that character's key, make sure they are in the scene's
@@ -157,9 +166,18 @@ Production rules (AI video):
   motion_prompt. Never put the peak or the result of the action in frame_prompt, and never freeze anyone mid-air.
   Examples: diving → frame: Rosa running to the pool edge, arms starting to lift; motion: she dives in.
   Slap → frame: the two women face to face, Camila's hand starting to rise; motion: the slap and the reaction.
+  Fall → frame: she is already tipping backward, knees giving way, arms flung out (the fall has begun); motion: she hits
+  the floor and screams. The frame must already show the START of the key action, never a different calm gesture
+  (touching a cheek, fixing hair): the video model continues whatever gesture the frame shows.
   Stroller falls → frame: the stroller rolling near the edge; motion: it tips over and splashes.
 - Continuity: each frame_prompt must match how the previous scene ENDED (positions, who holds the baby, wet
   clothes after the pool, objects already in the water, time of day). Write these details explicitly.
+- motion_prompt = ONE main action that starts at second 0 and is finished well inside the shot length (a 1-second shot =
+  one quick reaction; a 5-second shot = one action like "throws herself to the floor screaming"). Never a chain of
+  preparations (touches cheek, then fixes hair, then pulls the dress, then falls): video models do them slowly one by one
+  and the key action ends up cut off. Put the key action FIRST. (In a REMAKE, a shot that has several quick actions in the
+  reference keeps them all, in the same order, written as one fast continuous movement: "slaps him, instantly rips her own
+  neckline and throws herself to the floor" — no pauses between them.)
 - Each scene shows ONE clear action that a viewer understands in 2 seconds, and the scenes follow cause → effect
   in a logical order (no action shown twice, no jumps that skip what the viewer needs to understand).
 - Dialogue: at most ONE speaker per scene. Set "speaker" to that character's key, make sure they are in the scene's
@@ -218,6 +236,9 @@ export async function writeStory(args: {
                 `exactly: same framing (wide / medium / close-up on the same person), same people in frame, same action, same emotion, ` +
                 `same words (translated), same order. If the reference opens on action, scene 1 opens on that action; if it opens calm, ` +
                 `so does yours. Do not add, remove, merge or reorder anything. Only the look changes: new faces, names, outfits, place details.` +
+                `\nCopy every physical action of each shot (who hits whom, who falls, who throws what), never a softer substitute ` +
+                `(e.g. "slaps her own cheek" instead of "slaps the boy"). If the reference shows an adult hitting a teenager, keep the ` +
+                `slap but cast that character as 18 or 19 years old (looks young), so the image and video models accept it.` +
                 `\nKeep the reference's LIGHT and REALISM (time of day, daylight vs lamps, neutral vs warm colors, how plain the room is): ` +
                 `if it is a bright daylight room, do not turn it into an evening with chandeliers and glossy reflections. ` +
                 `Each frame_prompt = the first frame of that shot, the moment just before its action, same framing as the reference shot.`
