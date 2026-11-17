@@ -94,7 +94,7 @@ export default function MyRecipesPage() {
           </div>
           <div className="field">
             <label>Steps (scenes, about 1.5 s each)</label>
-            <input type="number" min={3} max={12} value={scenes} onChange={(e) => setScenes(Math.max(3, Math.min(12, Number(e.target.value) || 6)))} />
+            <input type="number" min={3} max={16} value={scenes} onChange={(e) => setScenes(Math.max(3, Math.min(16, Number(e.target.value) || 6)))} />
           </div>
           <div className="field">
             <label>Video model</label>

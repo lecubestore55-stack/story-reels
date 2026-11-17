@@ -4,7 +4,7 @@ import path from "node:path";
 import { one, q } from "../lib/db";
 import {
   IMAGE_TIERS, LIPSYNC_ENDPOINT, LIPSYNC_PRICE_PER_SECOND, LOOKS,
-  TTS_ENDPOINT, TTS_PRICE_PER_CHAR, LIPSYNC_FALLBACK, LIPSYNC_MODEL, STEMS_ENDPOINT, STEMS_PRICE_PER_SECOND, VIDEO_MODELS, languageCode, useDub, type ProjectSettings,
+  TTS_ENDPOINT, TTS_PRICE_PER_CHAR, sceneSeconds, LIPSYNC_FALLBACK, LIPSYNC_MODEL, STEMS_ENDPOINT, STEMS_PRICE_PER_SECOND, VIDEO_MODELS, languageCode, useDub, type ProjectSettings,
 } from "../lib/config";
 import { abs, downloadTo } from "../lib/storage";
 import { enqueue } from "../lib/jobs";
@@ -40,13 +40,31 @@ export async function analyzeStep(referenceId: string) {
   try {
     const ext = path.extname(ref.video_path).toLowerCase();
     const mime = ext === ".mov" ? "video/quicktime" : ext === ".webm" ? "video/webm" : "video/mp4";
-    const { analysis, cost } = await analyzeReference(ref.video_path, abs(ref.video_path), ref.notes, mime, ref.kind === "recipe" ? "recipe" : "story");
-    // Count the real cuts with ffmpeg (more reliable than the AI's guess).
+    // Count the real cuts with ffmpeg first (more reliable than the AI's guess), and ask for one beat per cut,
+    // so a remake can copy the reference shot by shot.
+    let shots: Awaited<ReturnType<typeof detectShots>> | null = null;
     try {
-      (analysis as any).shots = await detectShots(abs(ref.video_path));
+      shots = await detectShots(abs(ref.video_path));
     } catch (e: any) {
       console.warn("shot detection failed:", e?.message);
     }
+    let notes = ref.notes as string | null;
+    if (shots && shots.count >= 2 && shots.count <= 20) {
+      let t = 0;
+      const list = shots.durations.map((d, i) => {
+        const line = `shot ${i + 1}: ${t.toFixed(1)}s → ${(t + d).toFixed(1)}s`;
+        t += d;
+        return line;
+      });
+      notes =
+        `MEASURED CUTS: the video has exactly ${shots.count} shots:\n${list.join("\n")}\n` +
+        `Fill "beats" with EXACTLY ${shots.count} entries, one per shot, in this order, using these start/end times. For each: ` +
+        `camera = framing and who is in frame (e.g. "wide: stepmother and boy by the money table", "close-up of the boy's face"), ` +
+        `action = exactly what happens in that shot and the exact words spoken in it (in quotes), emotion = the face/feeling shown.` +
+        (notes ? `\n\n${notes}` : "");
+    }
+    const { analysis, cost } = await analyzeReference(ref.video_path, abs(ref.video_path), notes, mime, ref.kind === "recipe" ? "recipe" : "story");
+    if (shots) (analysis as any).shots = shots;
     await q(
       `UPDATE story_references SET status='ready', analysis=$2, cost_usd=cost_usd+$3, updated_at=now() WHERE id=$1`,
       [referenceId, JSON.stringify(analysis), cost],
@@ -505,7 +523,7 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
   if (missing.length) throw new Error(`Generate the start frames first (missing scenes: ${missing.map((s) => s.index + 1).join(", ")})`);
 
   await setProject(projectId, { status: "clips", error: null });
-  const seconds = model.snapSeconds(p.settings.clipSeconds);
+  const refShots = await referenceShots(p);
   // Dub only stories that actually have lines; recipe reels keep the model's natural kitchen sounds.
   const dub = useDub(p.settings) && story.scenes.some((sc) => sc.dialogue);
   // Recipe reels keep the cooking sounds but lose any voice the video model invents (the voice-over is added at render).
@@ -517,6 +535,7 @@ export async function clipsStep(projectId: string, payload: { only?: number }) {
     let endpoint = model.endpoint;
     let requestId: string;
     const dubThis = dub && Boolean(scene.dialogue);
+    const seconds = sceneSeconds(p.settings, scene.index, refShots);
     // Dub mode keeps the model's sound: we let the speaker really talk (natural lips, gestures, slaps, steps),
     // then remove only the voices from the soundtrack and put the ElevenLabs voice + lip sync on top.
     const audio = p.settings.audio;
@@ -670,6 +689,14 @@ async function voiceoverFile(projectId: string, p: ProjectRow, story: Story): Pr
   throw new Error(`Voice-over failed: ${falError(last).slice(0, 200)}. Edit the voice-over text in the story and render again.`);
 }
 
+/** Shot lengths measured on the reference video (used when the reel copies its rhythm shot by shot). */
+async function referenceShots(p: ProjectRow): Promise<number[] | null> {
+  if (!p.settings.matchShots) return null;
+  const r = await one(`SELECT analysis FROM story_references WHERE id=$1`, [p.reference_id]);
+  const d = r?.analysis?.shots?.durations;
+  return Array.isArray(d) && d.length === p.settings.sceneCount ? d.map(Number) : null;
+}
+
 export async function renderStep(projectId: string) {
   const p = await getProject(projectId);
   const story = requireStory(p);
@@ -687,6 +714,7 @@ export async function renderStep(projectId: string) {
     hookText: p.settings.hookText ? story.hook_text : null,
     subtitles: p.settings.subtitles ? story.scenes.map((s) => s.dialogue ?? null) : undefined,
     shotSeconds: p.settings.shotSeconds || undefined,
+    shotList: await referenceShots(p),
     endText: p.settings.endCard ? story.end_text || "What happened next? Full story in the comments 👇" : null,
     music: p.music_path ? abs(p.music_path) : null,
     workDir: abs(`projects/${projectId}/tmp`),

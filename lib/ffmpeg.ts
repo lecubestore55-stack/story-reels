@@ -68,6 +68,7 @@ type RenderOpts = {
   workDir: string;          // absolute temp dir for text files
   subtitles?: (string | null)[]; // one line of dialogue per clip (null = none), shown while that clip plays
   shotSeconds?: number;     // keep only the first N seconds of each clip (0/undefined = whole clip)
+  shotList?: number[] | null; // per-clip length (copies a reference's rhythm); overrides shotSeconds
   endText?: string | null;  // curiosity card shown over the last seconds ("Full story in the comments 👇")
   voiceover?: string | null; // absolute path: narration over the whole reel (scene sound is lowered under it)
 };
@@ -93,10 +94,20 @@ async function renderAt(opts: RenderOpts, width: number, threads: number) {
   await mkdir(opts.workDir, { recursive: true });
   await mkdir(path.dirname(opts.output), { recursive: true });
 
-  const cut = opts.shotSeconds && opts.shotSeconds > 0 ? opts.shotSeconds : 0;
-  const infos = (await Promise.all(opts.clips.map(probe))).map((i) => (cut ? { ...i, duration: Math.min(i.duration, cut) } : i));
+  const cutAll = opts.shotSeconds && opts.shotSeconds > 0 ? opts.shotSeconds : 0;
+  const cutOf = (i: number) => (opts.shotList?.length === opts.clips.length ? opts.shotList[i] : cutAll) || 0;
+  const raw = await Promise.all(opts.clips.map(probe));
+  // A trimmed shot skips the first ~0.4 s when there is room: video models start almost still (the start frame),
+  // so a 1-second cut taken from the very beginning shows nothing happening.
+  const startOf = (i: number) => {
+    const c = cutOf(i);
+    return c && raw[i].duration - c > 0.6 ? Math.min(0.4, raw[i].duration - c - 0.2) : 0;
+  };
+  const infos = raw.map((info, i) => (cutOf(i) ? { ...info, duration: Math.min(info.duration - startOf(i), cutOf(i)) } : info));
   const args: string[] = ["-y", "-hide_banner", "-loglevel", "error", "-filter_complex_threads", "1"];
-  for (const c of opts.clips) args.push(...(cut ? ["-t", String(cut)] : []), "-i", c);
+  opts.clips.forEach((c, i) =>
+    args.push(...(startOf(i) ? ["-ss", startOf(i).toFixed(2)] : []), ...(cutOf(i) ? ["-t", cutOf(i).toFixed(2)] : []), "-i", c),
+  );
   const musicIndex = opts.music ? opts.clips.length : -1;
   if (opts.music) args.push("-stream_loop", "-1", "-i", opts.music);
   const voIndex = opts.voiceover ? opts.clips.length + (opts.music ? 1 : 0) : -1;
@@ -189,6 +200,9 @@ async function renderAt(opts: RenderOpts, width: number, threads: number) {
     f.push(`[bg][vo]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[avo]`);
     aLabel = "avo";
   }
+  // Facebook plays reels loud: bring the whole mix to about -14 LUFS (AI clips often come out very quiet).
+  f.push(`[${aLabel}]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=44100[aout]`);
+  aLabel = "aout";
 
   args.push(
     "-filter_complex", f.join(";"),

@@ -78,7 +78,7 @@ const recipeTool = () => ({
       scenes: {
         type: "array",
         minItems: 1,
-        maxItems: 12,
+        maxItems: 16,
         items: {
           type: "object",
           properties: {

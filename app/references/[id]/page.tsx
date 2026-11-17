@@ -191,7 +191,9 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
                   Match it automatically
                 </label>
                 {autoTiming && (
-                  <span className="muted"> → {s.sceneCount} clips × {s.clipSeconds}s{s.shotSeconds ? `, ${s.shotSeconds}s shown per shot` : ""} with {VIDEO_MODELS[s.videoModel].label.split(" —")[0]}.</span>
+                  <span className="muted"> → {s.matchShots && shots?.durations
+                    ? `${s.sceneCount} scenes, one per shot of the reference, each cut to the same length (${shots.durations.map((d: number) => d.toFixed(1)).join("s, ")}s)`
+                    : `${s.sceneCount} clips × ${s.clipSeconds}s${s.shotSeconds ? `, ${s.shotSeconds}s shown per shot` : ""}`} with {VIDEO_MODELS[s.videoModel].label.split(" —")[0]}.</span>
                 )}
               </div>
             )}
@@ -216,7 +218,7 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
               </div>
               <div className="field">
                 <label>Scenes (clips)</label>
-                <input type="number" min={1} max={12} value={settings.sceneCount} onChange={(e) => { setAutoTiming(false); set({ sceneCount: Number(e.target.value) }); }} />
+                <input type="number" min={1} max={16} value={settings.sceneCount} onChange={(e) => { setAutoTiming(false); set({ sceneCount: Number(e.target.value), matchShots: false }); }} />
               </div>
               <div className="field">
                 <label>Seconds per clip ({model.minSeconds}–{model.maxSeconds})</label>
@@ -224,7 +226,7 @@ export default function ReferencePage({ params }: { params: Promise<{ id: string
               </div>
               <div className="field">
                 <label>Shot length in final video (fast cuts)</label>
-                <select value={String(s.shotSeconds)} onChange={(e) => { setAutoTiming(false); set({ shotSeconds: Number(e.target.value) }); }}>
+                <select value={String(s.shotSeconds)} onChange={(e) => { setAutoTiming(false); set({ shotSeconds: Number(e.target.value), matchShots: false }); }}>
                   <option value="0">Whole clip ({s.clipSeconds}s)</option>
                   {[1.5, 2, 2.5, 3].filter((v) => v < s.clipSeconds).map((v) => <option key={v} value={v}>{v}s per shot (trim)</option>)}
                 </select>

@@ -64,7 +64,7 @@ export const StorySchema = z.object({
   setting: z.string(),                    // place + look, reused in every frame
   characters: z.array(CharacterSchema).min(1).max(5),
   voiceover: z.string().nullable().optional(), // recipe reels: narration over the whole reel (target language)
-  scenes: z.array(SceneSchema).min(1).max(12),
+  scenes: z.array(SceneSchema).min(1).max(16),
   originality: z.object({
     kept_from_reference: z.array(z.string()),   // only abstract structure
     changed: z.array(z.string()),               // concrete differences

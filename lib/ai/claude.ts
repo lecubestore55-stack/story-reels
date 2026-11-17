@@ -36,7 +36,7 @@ export const STORY_TOOL = {
       scenes: {
         type: "array",
         minItems: 1,
-        maxItems: 12,
+        maxItems: 16,
         items: {
           type: "object",
           properties: {
@@ -92,6 +92,8 @@ Production rules (AI video):
   (write "silent", "mouth closed", "stares in shock"). Talking without a line makes the video model invent English words.
 - DIALOGUE WORDING: spoken lines go through a voice content checker that blocks words about killing, death, poison,
   suicide or weapons in ANY language. Imply them instead: "You want me gone for the money?", "What did you put in my glass?".
+- OPENING: scene 1 starts IN the conflict (the fall, the slap, the accusation, the scream) — never a calm setup shot
+  (someone smiling, preparing, walking in). Viewers decide in the first second. (In a REMAKE, open exactly like the reference.)
 - SPEAKER CHECK: the speaker is the person who SAYS the words. Read each line as that character: a child says
   "Dad/Mom" to a parent; a parent says the child's name. If the line does not fit the speaker, fix the speaker.
 - Character "role" must be neutral and family-friendly (e.g. "daughter", "stepmother", "nanny"), never words like
@@ -145,6 +147,8 @@ Production rules (AI video):
   (write "silent", "mouth closed", "stares in shock"). Talking without a line makes the video model invent English words.
 - DIALOGUE WORDING: spoken lines go through a voice content checker that blocks words about killing, death, poison,
   suicide or weapons in ANY language. Imply them instead: "You want me gone for the money?", "What did you put in my glass?".
+- OPENING: scene 1 starts IN the conflict (the fall, the slap, the accusation, the scream) — never a calm setup shot
+  (someone smiling, preparing, walking in). Viewers decide in the first second. (In a REMAKE, open exactly like the reference.)
 - SPEAKER CHECK: the speaker is the person who SAYS the words. Read each line as that character: a child says
   "Dad/Mom" to a parent; a parent says the child's name. If the line does not fit the speaker, fix the speaker.
 - Character "role" must be neutral and family-friendly (e.g. "daughter", "stepmother", "nanny"), never words like
@@ -207,7 +211,22 @@ export async function writeStory(args: {
       ? `Reference video to remake (keep its story, beats, twist and dialogue; change every visual):\n${JSON.stringify(analysis, null, 2)}`
       : `Reference breakdown (competitor video, for inspiration only):\n${JSON.stringify(analysis, null, 2)}`,
     analysis.shots
-      ? `Reference rhythm (measured): ${analysis.shots.duration}s long, ${analysis.shots.count} shots, shot lengths in seconds: ${analysis.shots.durations.join(", ")}. Match this pacing with your scenes.`
+      ? `Reference rhythm (measured): ${analysis.shots.duration}s long, ${analysis.shots.count} shots, shot lengths in seconds: ${analysis.shots.durations.join(", ")}. Match this pacing with your scenes.` +
+        (settings.matchShots && analysis.shots.count === settings.sceneCount
+          ? (remake
+              ? `\nEXACT REMAKE, SHOT BY SHOT: the reference "beats" list its ${analysis.shots.count} shots in order. Scene i copies beat i ` +
+                `exactly: same framing (wide / medium / close-up on the same person), same people in frame, same action, same emotion, ` +
+                `same words (translated), same order. If the reference opens on action, scene 1 opens on that action; if it opens calm, ` +
+                `so does yours. Do not add, remove, merge or reorder anything. Only the look changes: new faces, names, outfits, place details.` +
+                `\nKeep the reference's LIGHT and REALISM (time of day, daylight vs lamps, neutral vs warm colors, how plain the room is): ` +
+                `if it is a bright daylight room, do not turn it into an evening with chandeliers and glossy reflections. ` +
+                `Each frame_prompt = the first frame of that shot, the moment just before its action, same framing as the reference shot.`
+              : "") +
+            `\nSHOT BY SHOT: scene i = reference shot i, cut to exactly that length. Shots of 2 s or more are wider shots that show ` +
+            `the action (who does what, where). Shots under 2 s are CLOSE-UP REACTION shots: one face filling the frame (shock, tears, ` +
+            `anger, a smirk) or one detail (a hand, a phone screen, the money). Put lines only on scenes long enough to say them ` +
+            `(about 2.5 words per second); short reaction shots have no dialogue or one or two words.`
+          : "")
       : "",
     remake && analysis.transcript?.trim() ? `Dialogue to keep (transcript of the reference):\n${analysis.transcript.trim()}` : "",
     args.notes?.trim() ? `Uploader notes about the reference:\n${args.notes.trim()}` : "",

@@ -287,6 +287,7 @@ export interface ProjectSettings {
   imageTier: ImageTierId;
   sceneCount: number;      // number of clips
   shotSeconds: number;     // 0 = use whole clip; otherwise keep only the first N seconds of each clip (fast cuts)
+  matchShots: boolean;     // one scene per reference shot, each generated long enough and cut to that shot's exact length
   clipSeconds: number;     // seconds per clip
   audio: boolean;          // model-generated sound (ambience, sfx, short lines)
   hookText: boolean;       // burn the hook text at the top of the reel
@@ -378,6 +379,7 @@ export const DEFAULT_SETTINGS: ProjectSettings = {
   imageTier: "standard",
   sceneCount: 3,
   shotSeconds: 0,
+  matchShots: false,
   clipSeconds: 6,
   audio: true,
   hookText: true,
@@ -402,7 +404,8 @@ export function normalizeSettings(input: Partial<ProjectSettings> | null | undef
     ...s,
     videoModel: model,
     imageTier: IMAGE_TIERS[s.imageTier] ? s.imageTier : DEFAULT_SETTINGS.imageTier,
-    sceneCount: clamp(Number(s.sceneCount) || 3, 1, 12),
+    sceneCount: clamp(Number(s.sceneCount) || 3, 1, 16),
+    matchShots: Boolean(s.matchShots),
     shotSeconds: Math.max(0, Math.min(15, Math.round((Number(s.shotSeconds) || 0) * 2) / 2)),
     clipSeconds: VIDEO_MODELS[model].snapSeconds(Number(s.clipSeconds) || 6),
     audio: Boolean(s.audio) && VIDEO_MODELS[model].supportsAudio,
@@ -435,23 +438,30 @@ export function estimateVideoCost(s: ProjectSettings, characterCount = 3): numbe
  * Pick scene count, clip length and shot length that reproduce the reference's rhythm
  * with a given video model (each model has its own min/max clip length).
  */
-export function recommendTiming(shots: { duration: number; count: number; avg: number } | null | undefined, videoModel: VideoModelId) {
+export function recommendTiming(
+  shots: { duration: number; count: number; avg: number; durations?: number[] } | null | undefined,
+  videoModel: VideoModelId,
+) {
   const m = VIDEO_MODELS[videoModel];
   if (!shots || !shots.duration) return null;
   const D = shots.duration;
   const N = Math.max(1, shots.count);
+  // Several cuts with different lengths (a wide 5 s shot, then 1 s reaction close-ups…): copy the rhythm shot by shot.
+  if (N >= 3 && N <= 16 && shots.durations?.length === N) {
+    return { sceneCount: N, clipSeconds: m.minSeconds, shotSeconds: 0, matchShots: true };
+  }
   const avg = D / N;
   let sceneCount: number, clipSeconds: number, shotSeconds = 0;
   if (avg < m.minSeconds) {
     // Fast cuts: generate the shortest clip the model allows and keep only the first part of each.
     shotSeconds = Math.max(1.5, Math.round(avg * 2) / 2);
-    sceneCount = Math.min(12, Math.max(1, Math.round(D / shotSeconds)));
+    sceneCount = Math.min(16, Math.max(1, Math.round(D / shotSeconds)));
     shotSeconds = Math.max(1.5, Math.round((D / sceneCount) * 2) / 2);
     clipSeconds = m.minSeconds;
   } else if (avg > m.maxSeconds) {
     // One long take: choose the fewest clips whose allowed lengths add up closest to the reference.
     let best = { n: 1, len: m.maxSeconds, err: Infinity };
-    for (let n = Math.max(1, Math.ceil(D / m.maxSeconds)); n <= 12; n++) {
+    for (let n = Math.max(1, Math.ceil(D / m.maxSeconds)); n <= 16; n++) {
       const len = m.snapSeconds(D / n);
       const err = Math.abs(n * len - D);
       if (err < best.err - 0.5) best = { n, len, err };
@@ -459,11 +469,18 @@ export function recommendTiming(shots: { duration: number; count: number; avg: n
     sceneCount = best.n;
     clipSeconds = best.len;
   } else {
-    sceneCount = Math.min(12, N);
+    sceneCount = Math.min(16, N);
     clipSeconds = m.snapSeconds(D / sceneCount);
   }
   if (shotSeconds >= clipSeconds) shotSeconds = 0;
-  return { sceneCount, clipSeconds, shotSeconds };
+  return { sceneCount, clipSeconds, shotSeconds, matchShots: false };
+}
+
+/** Generated length of scene i when copying the reference shot by shot: long enough for that shot (+0.3 s margin). */
+export function sceneSeconds(s: ProjectSettings, index: number, refDurations?: number[] | null): number {
+  const m = VIDEO_MODELS[s.videoModel];
+  const d = s.matchShots && refDurations?.length === s.sceneCount ? refDurations[index] : 0;
+  return m.snapSeconds(Math.max(s.clipSeconds, d ? Math.ceil(d + 0.3) : 0));
 }
 
 /** Target markets. All use scripts the burn-in font supports (Latin, Cyrillic, Greek). */
